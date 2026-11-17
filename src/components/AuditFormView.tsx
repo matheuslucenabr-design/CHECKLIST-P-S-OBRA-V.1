@@ -239,7 +239,7 @@ export function AuditFormView({
       if (format === 'pdf') {
         exportAuditToPdf(audit);
       } else if (format === 'excel') {
-        exportAuditToExcel(audit);
+        await exportAuditToExcel(audit);
       } else {
         await exportAuditToWord(audit);
       }

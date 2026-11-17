@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import {
   AlignmentType,
   BorderStyle,
@@ -67,6 +68,11 @@ function getImageFormatForPdf(dataUrl: string): 'JPEG' | 'PNG' {
 function getImageTypeForDocx(dataUrl: string): 'jpg' | 'png' {
   if (dataUrl.startsWith('data:image/png')) return 'png';
   return 'jpg';
+}
+
+function getImageExtensionForExcel(dataUrl: string): 'jpeg' | 'png' {
+  if (dataUrl.startsWith('data:image/png')) return 'png';
+  return 'jpeg';
 }
 
 export function exportAuditToPdf(audit: AuditInspection): void {
@@ -314,23 +320,65 @@ export function exportAuditToPdf(audit: AuditInspection): void {
   doc.save(`auditoria_blindagem_${fileSlug}_${audit.dataExecucao || 'sem_data'}.pdf`);
 }
 
-export function exportAuditToExcel(audit: AuditInspection): void {
-  const wb = XLSX.utils.book_new();
+export async function exportAuditToExcel(audit: AuditInspection): Promise<void> {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Auditoria Pós-Obra Blindagem de Rede';
+  wb.created = new Date();
   const summary = computeAnalytics([audit]);
 
-  // Sheet 1: Capa e Horários
-  const coverData = [
-    ['AUDITORIA PÓS OBRA BLINDAGEM DE REDE'],
-    [],
-    ['DADOS DA AUDITORIA', 'VALOR'],
+  const thinBorder: Partial<ExcelJS.Borders> = {
+    top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+  };
+
+  // Sheet 1: Resumo da Auditoria
+  const wsCover = wb.addWorksheet('Resumo da Auditoria');
+  wsCover.columns = [{ width: 38 }, { width: 52 }];
+
+  const titleRow = wsCover.addRow(['AUDITORIA PÓS OBRA BLINDAGEM DE REDE']);
+  wsCover.mergeCells('A1:B1');
+  titleRow.height = 28;
+  titleRow.getCell(1).font = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
+  titleRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+  titleRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+
+  wsCover.addRow([]);
+
+  const addCoverSection = (sectionTitle: string, entries: Array<[string, string | number]>) => {
+    const hdr = wsCover.addRow([sectionTitle, 'VALOR']);
+    hdr.height = 22;
+    hdr.eachCell((cell) => {
+      cell.font = { bold: true, size: 10, color: { argb: 'FF0F172A' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+      cell.border = thinBorder;
+      cell.alignment = { vertical: 'middle' };
+    });
+
+    for (const [label, val] of entries) {
+      const r = wsCover.addRow([label, val]);
+      r.height = 20;
+      r.getCell(1).font = { bold: true, size: 10, color: { argb: 'FF334155' } };
+      r.getCell(2).font = { size: 10, color: { argb: 'FF0F172A' } };
+      r.eachCell((cell) => {
+        cell.border = thinBorder;
+        cell.alignment = { vertical: 'middle', wrapText: true };
+      });
+    }
+    wsCover.addRow([]);
+  };
+
+  addCoverSection('DADOS DA AUDITORIA', [
     ['Projeto', audit.projeto || '—'],
     ['Bairro', audit.bairro || '—'],
     ['Data de Execução', formatDateBr(audit.dataExecucao)],
     ['Fiscal da Obra', audit.fiscalObra || '—'],
     ['Revalidador', audit.revalidador || '—'],
     ['Observação Geral', audit.observacao || '—'],
-    [],
-    ['HORÁRIOS DA OPERAÇÃO', 'REGISTRO'],
+  ]);
+
+  addCoverSection('HORÁRIOS DA OPERAÇÃO', [
     ['Chegada', audit.chegada || '—'],
     ['Revisão Projeto (Início)', audit.revisaoProjetoInicio || '—'],
     ['Revisão Projeto (Final)', audit.revisaoProjetoFim || '—'],
@@ -338,8 +386,9 @@ export function exportAuditToExcel(audit: AuditInspection): void {
     ['Início de Vistoria', audit.inicioVistoria || '—'],
     ['Final de Vistoria', audit.finalVistoria || '—'],
     ['Embarque Saída', audit.embarqueSaida || '—'],
-    [],
-    ['INDICADORES RESUMIDOS', 'VALOR'],
+  ]);
+
+  addCoverSection('INDICADORES RESUMIDOS', [
     ['Postes Inspecionados', summary.totalPoles],
     ['Postes Conformes', summary.conformingPoles],
     ['Postes Não Conformes', summary.nonConformingPoles],
@@ -347,13 +396,24 @@ export function exportAuditToExcel(audit: AuditInspection): void {
     ['Total de Ocorrências Registradas', summary.totalOccurrences],
     ['Quantidade Total de Itens Apontados', summary.totalProblemQuantity],
     ['Fotos de Evidência Anexadas', summary.totalPhotos],
-  ];
-  const wsCover = XLSX.utils.aoa_to_sheet(coverData);
-  wsCover['!cols'] = [{ wch: 36 }, { wch: 48 }];
-  XLSX.utils.book_append_sheet(wb, wsCover, 'Resumo da Auditoria');
+  ]);
 
-  // Sheet 2: Checklist de Postes e Problemas
-  const checklistHeader = [
+  // Sheet 2: Checklist de Postes (com imagens embutidas na célula EVIDENCIAS FOTOGRAFICAS)
+  const wsChecklist = wb.addWorksheet('Checklist de Postes');
+  wsChecklist.columns = [
+    { width: 13 }, // A: Poste Nº
+    { width: 16 }, // B: ID do Poste
+    { width: 15 }, // C: Tipo de Poste
+    { width: 16 }, // D: Status do Poste
+    { width: 46 }, // E: Problema Identificado
+    { width: 12 }, // F: Quantidade
+    { width: 28 }, // G: Observação do Item
+    { width: 28 }, // H: Observação do Poste
+    { width: 16 }, // I: Qtd. Fotos Anexadas
+    { width: 58 }, // J: EVIDENCIAS FOTOGRAFICAS
+  ];
+
+  const headerRow = wsChecklist.addRow([
     'Poste Nº',
     'ID do Poste',
     'Tipo de Poste',
@@ -363,70 +423,164 @@ export function exportAuditToExcel(audit: AuditInspection): void {
     'Observação do Item',
     'Observação do Poste',
     'Qtd. Fotos Anexadas',
-    'Nomes das Evidências',
-  ];
-  const checklistRows: Array<Array<string | number>> = [checklistHeader];
+    'EVIDENCIAS FOTOGRAFICAS',
+  ]);
+  headerRow.height = 26;
+  headerRow.eachCell((cell) => {
+    cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E40AF' } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = thinBorder;
+  });
 
   for (const pole of audit.poles) {
-    const photoNames = pole.photos.map((ph, i) => `Foto ${i + 1}: ${ph.name}`).join(' | ') || 'Nenhuma foto';
-    if (pole.problems.length === 0) {
-      checklistRows.push([
+    const poleStartRow = wsChecklist.rowCount + 1;
+    const items =
+      pole.problems.length === 0
+        ? [{ problem: 'Sem não conformidades registradas', quantity: 0, note: '—' }]
+        : pole.problems.map((pr) => ({
+            problem: pr.problem,
+            quantity: pr.quantity,
+            note: pr.note || '—',
+          }));
+
+    const numRows = items.length;
+    const photos = pole.photos.slice(0, 4);
+    const photoGridRows = photos.length > 2 ? 2 : photos.length > 0 ? 1 : 0;
+    const totalNeededHeightPt = photoGridRows === 2 ? 232 : photoGridRows === 1 ? 118 : 24;
+    const rowHeightPt = Math.max(24, Math.ceil(totalNeededHeightPt / numRows));
+
+    for (let i = 0; i < numRows; i++) {
+      const item = items[i];
+      const row = wsChecklist.addRow([
         `Poste ${formatPoleNumber(pole.number)}`,
         pole.poleId || '—',
         pole.type || '—',
         pole.status,
-        'Sem não conformidades registradas',
-        0,
-        '—',
+        item.problem,
+        item.quantity,
+        item.note,
         pole.observation || '—',
-        pole.photos.length,
-        photoNames,
+        photos.length,
+        photos.length === 0 ? 'Sem evidência fotográfica' : '',
       ]);
-    } else {
-      for (const prob of pole.problems) {
-        checklistRows.push([
-          `Poste ${formatPoleNumber(pole.number)}`,
-          pole.poleId || '—',
-          pole.type || '—',
-          pole.status,
-          prob.problem,
-          prob.quantity,
-          prob.note || '—',
-          pole.observation || '—',
-          pole.photos.length,
-          photoNames,
-        ]);
+      row.height = rowHeightPt;
+      row.eachCell((cell, colNumber) => {
+        cell.border = thinBorder;
+        cell.font = { size: 10, color: { argb: 'FF0F172A' } };
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: colNumber === 6 || colNumber === 9 ? 'center' : 'left',
+          wrapText: true,
+        };
+      });
+
+      if (photos.length === 0) {
+        const photoCell = row.getCell(10);
+        photoCell.font = { size: 9, italic: true, color: { argb: 'FF64748B' } };
+        photoCell.alignment = { vertical: 'middle', horizontal: 'center' };
       }
     }
-  }
 
-  const wsChecklist = XLSX.utils.aoa_to_sheet(checklistRows);
-  wsChecklist['!cols'] = [
-    { wch: 12 },
-    { wch: 16 },
-    { wch: 18 },
-    { wch: 16 },
-    { wch: 48 },
-    { wch: 12 },
-    { wch: 28 },
-    { wch: 28 },
-    { wch: 18 },
-    { wch: 40 },
-  ];
-  XLSX.utils.book_append_sheet(wb, wsChecklist, 'Checklist de Postes');
+    const poleEndRow = wsChecklist.rowCount;
+
+    if (numRows > 1) {
+      wsChecklist.mergeCells(`J${poleStartRow}:J${poleEndRow}`);
+    }
+
+    // Embed actual pole photos inside Column J (0-based col = 9)
+    photos.forEach((photo, idx) => {
+      try {
+        const imageId = wb.addImage({
+          base64: photo.dataUrl,
+          extension: getImageExtensionForExcel(photo.dataUrl),
+        });
+
+        const gridCol = idx % 2;
+        const gridRow = Math.floor(idx / 2);
+
+        const maxW = 184;
+        const maxH = 136;
+        let imgW = maxW;
+        let imgH = maxH;
+        if (photo.width > 0 && photo.height > 0) {
+          const ratio = photo.width / photo.height;
+          if (maxW / maxH > ratio) {
+            imgH = maxH;
+            imgW = Math.round(maxH * ratio);
+          } else {
+            imgW = maxW;
+            imgH = Math.round(maxW / ratio);
+          }
+        }
+
+        const tlCol = 9 + (gridCol === 0 ? 0.03 : 0.50);
+        const tlRow = (poleStartRow - 1) + (gridRow === 0 ? 0.05 : 0.5 * numRows + 0.03);
+
+        wsChecklist.addImage(imageId, {
+          tl: { col: tlCol, row: tlRow },
+          ext: { width: imgW, height: imgH },
+          editAs: 'oneCell',
+        });
+      } catch {
+        // Ignore malformed image
+      }
+    });
+  }
 
   // Sheet 3: Indicadores por Problema
-  const probHeader = ['Problema Padrão', 'Ocorrências', 'Quantidade Total', 'Postes Afetados', 'Pendentes / NC', 'Regularizados'];
-  const probRows: Array<Array<string | number>> = [probHeader];
-  for (const st of summary.problemStats) {
-    probRows.push([st.problem, st.occurrences, st.totalQuantity, st.polesAffected, st.pendingCount, st.regularizedCount]);
-  }
-  const wsProblems = XLSX.utils.aoa_to_sheet(probRows);
-  wsProblems['!cols'] = [{ wch: 50 }, { wch: 14 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 16 }];
-  XLSX.utils.book_append_sheet(wb, wsProblems, 'Indicadores por Problema');
+  const wsProblems = wb.addWorksheet('Indicadores por Problema');
+  wsProblems.columns = [
+    { width: 54 },
+    { width: 14 },
+    { width: 18 },
+    { width: 16 },
+    { width: 16 },
+    { width: 16 },
+  ];
 
+  const probHeaderRow = wsProblems.addRow([
+    'Problema Padrão',
+    'Ocorrências',
+    'Quantidade Total',
+    'Postes Afetados',
+    'Não Conformes',
+    'Conformes',
+  ]);
+  probHeaderRow.height = 24;
+  probHeaderRow.eachCell((cell) => {
+    cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.border = thinBorder;
+  });
+
+  for (const st of summary.problemStats) {
+    const r = wsProblems.addRow([
+      st.problem,
+      st.occurrences,
+      st.totalQuantity,
+      st.polesAffected,
+      st.pendingCount,
+      st.regularizedCount,
+    ]);
+    r.height = 20;
+    r.eachCell((cell, colNumber) => {
+      cell.border = thinBorder;
+      cell.font = { size: 10, color: { argb: 'FF0F172A' } };
+      cell.alignment = {
+        vertical: 'middle',
+        horizontal: colNumber === 1 ? 'left' : 'center',
+      };
+    });
+  }
+
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
   const fileSlug = sanitizeFileName(audit.projeto || audit.bairro || 'relatorio');
-  XLSX.writeFile(wb, `auditoria_blindagem_${fileSlug}_${audit.dataExecucao || 'sem_data'}.xlsx`);
+  triggerBlobDownload(blob, `auditoria_blindagem_${fileSlug}_${audit.dataExecucao || 'sem_data'}.xlsx`);
 }
 
 export function exportConsolidatedExcel(audits: AuditInspection[]): void {

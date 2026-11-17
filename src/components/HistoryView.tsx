@@ -76,6 +76,15 @@ export function HistoryView({
     }
   };
 
+  const handleExcelDownload = async (audit: AuditInspection) => {
+    setBusyId(audit.id);
+    try {
+      await exportAuditToExcel(audit);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -231,11 +240,12 @@ export function HistoryView({
                           </button>
                           <button
                             type="button"
-                            onClick={() => exportAuditToExcel(item)}
-                            className="inline-flex h-8 items-center gap-1 rounded border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-800 hover:border-emerald-700 hover:text-emerald-700"
+                            disabled={busyId === item.id}
+                            onClick={() => void handleExcelDownload(item)}
+                            className="inline-flex h-8 items-center gap-1 rounded border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-800 hover:border-emerald-700 hover:text-emerald-700 disabled:opacity-50"
                           >
                             <FileSpreadsheet className="h-3.5 w-3.5" />
-                            <span>Excel</span>
+                            <span>{busyId === item.id ? '...' : 'Excel'}</span>
                           </button>
                           <button
                             type="button"
