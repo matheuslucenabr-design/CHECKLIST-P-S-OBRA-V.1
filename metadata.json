@@ -1,0 +1,6 @@
+{
+  "name": "Auditoria Pós-Obra Blindagem de Rede",
+  "description": "Sistema de formulário digital, checklist de campo com evidências fotográficas, análise de indicadores e geração de relatórios em PDF, Excel e Word para auditoria pós-obra de blindagem de rede.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
