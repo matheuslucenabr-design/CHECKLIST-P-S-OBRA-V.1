@@ -21,12 +21,10 @@ import {
   POLE_STATUS_OPTIONS,
   POLE_TYPE_OPTIONS,
   PROBLEM_OPTIONS,
-  PROBLEM_STATUS_OPTIONS,
   PhotoEvidence,
   PoleInspection,
   PoleProblem,
   PoleStatus,
-  ProblemStatus,
   createEmptyPole,
   createEmptyProblem,
   formatPoleNumber,
@@ -159,18 +157,8 @@ export function AuditFormView({
   const handleUpdateProblem = (problemId: string, patch: Partial<PoleProblem>) => {
     updatePole(safePoleIndex, (pole) => {
       const nextProblems = pole.problems.map((pr) => (pr.id === problemId ? { ...pr, ...patch } : pr));
-      let nextPoleStatus = pole.status;
-      if (nextProblems.length > 0) {
-        const allReg = nextProblems.every((pr) => pr.status === 'Regularizado');
-        if (allReg) {
-          nextPoleStatus = 'Regularizado';
-        } else if (nextPoleStatus === 'Conforme' || nextPoleStatus === 'Regularizado') {
-          nextPoleStatus = 'Não Conforme';
-        }
-      }
       return {
         ...pole,
-        status: nextPoleStatus,
         problems: nextProblems,
       };
     });
@@ -381,7 +369,7 @@ export function AuditFormView({
                 type="text"
                 value={audit.projeto}
                 onChange={(e) => updateField('projeto', e.target.value)}
-                placeholder="Ex: PRJ-2026-408"
+                placeholder="Ex: RDU-26-0000"
                 className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
               />
             </label>
@@ -392,7 +380,7 @@ export function AuditFormView({
                 type="text"
                 value={audit.bairro}
                 onChange={(e) => updateField('bairro', e.target.value)}
-                placeholder="Ex: Centro / Boa Vista"
+                placeholder="Ex: JAPIIM"
                 className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
               />
             </label>
@@ -696,7 +684,7 @@ export function AuditFormView({
                 onChange={(e) =>
                   updatePole(safePoleIndex, (p) => ({ ...p, poleId: e.target.value }))
                 }
-                placeholder="Ex: P-0412 / Barramento 08"
+                placeholder="Ex: ID: 0415"
                 className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 font-mono text-sm text-slate-900 placeholder:font-sans placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
               />
             </label>
@@ -704,7 +692,7 @@ export function AuditFormView({
             <label className="block">
               <span className="mb-1.5 block text-xs font-semibold text-slate-700">Tipo</span>
               <select
-                value={POLE_TYPE_OPTIONS.includes(activePole.type as (typeof POLE_TYPE_OPTIONS)[number]) ? activePole.type : 'Outro'}
+                value={POLE_TYPE_OPTIONS.includes(activePole.type as (typeof POLE_TYPE_OPTIONS)[number]) ? activePole.type : POLE_TYPE_OPTIONS[0]}
                 onChange={(e) =>
                   updatePole(safePoleIndex, (p) => ({ ...p, type: e.target.value }))
                 }
@@ -744,7 +732,7 @@ export function AuditFormView({
                   Checklist de Problemas do Poste {formatPoleNumber(activePole.number)}
                 </h4>
                 <p className="text-xs text-slate-500">
-                  Informe um ou mais problemas encontrados neste poste com quantidade e status individual.
+                  Informe um ou mais problemas encontrados neste poste com quantidade e detalhe opcional.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -839,7 +827,7 @@ export function AuditFormView({
                     key={prob.id}
                     className="grid grid-cols-1 gap-3 bg-white p-3.5 lg:grid-cols-12 lg:items-end"
                   >
-                    <div className="lg:col-span-5">
+                    <div className="lg:col-span-6">
                       <label className="block">
                         <span className="mb-1 block font-mono text-[11px] font-semibold text-slate-500">
                           PROBLEMA #{String(pIdx + 1).padStart(2, '0')}
@@ -899,30 +887,7 @@ export function AuditFormView({
                       </div>
                     </div>
 
-                    <div className="lg:col-span-2">
-                      <label className="block">
-                        <span className="mb-1 block text-[11px] font-semibold text-slate-500">
-                          STATUS
-                        </span>
-                        <select
-                          value={prob.status}
-                          onChange={(e) =>
-                            handleUpdateProblem(prob.id, {
-                              status: e.target.value as ProblemStatus,
-                            })
-                          }
-                          className="h-10 w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs font-semibold text-slate-900 focus:border-blue-600 focus:outline-none"
-                        >
-                          {PROBLEM_STATUS_OPTIONS.map((st) => (
-                            <option key={st} value={st}>
-                              {st}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-
-                    <div className="lg:col-span-2">
+                    <div className="lg:col-span-3">
                       <label className="block">
                         <span className="mb-1 block text-[11px] font-semibold text-slate-500">
                           DETALHE (OPCIONAL)
@@ -931,7 +896,7 @@ export function AuditFormView({
                           type="text"
                           value={prob.note ?? ''}
                           onChange={(e) => handleUpdateProblem(prob.id, { note: e.target.value })}
-                          placeholder="Ex: fase B / ramal 2"
+                          placeholder="Ex: instalado de forma incorreta"
                           className="h-10 w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
                         />
                       </label>

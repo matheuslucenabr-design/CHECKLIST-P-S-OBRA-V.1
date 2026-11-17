@@ -83,10 +83,7 @@ export function formatMinutesDuration(minutes: number | null): string {
 }
 
 export function isPoleConforming(pole: PoleInspection): boolean {
-  if (pole.problems.length === 0) {
-    return pole.status === 'Conforme' || pole.status === 'Regularizado';
-  }
-  return pole.problems.every((p) => p.status === 'Regularizado');
+  return pole.status === 'Conforme' && pole.problems.length === 0;
 }
 
 export function computeAnalytics(audits: AuditInspection[]): AuditAnalyticsSummary {
@@ -153,6 +150,16 @@ export function computeAnalytics(audits: AuditInspection[]): AuditAnalyticsSumma
         bEntry.conforming += 1;
       }
 
+      const poleStatusKey = pole.status === 'Conforme' ? 'Conforme' : 'Não Conforme';
+      const poleQtySum = pole.problems.reduce(
+        (acc, p) => acc + (Number.isFinite(p.quantity) && p.quantity > 0 ? p.quantity : 1),
+        0
+      );
+      const sEntry = statusMap.get(poleStatusKey) ?? { count: 0, quantity: 0 };
+      sEntry.count += 1;
+      sEntry.quantity += poleQtySum;
+      statusMap.set(poleStatusKey, sEntry);
+
       const photoCount = pole.photos.length;
       totalPhotos += photoCount;
       bEntry.photos += photoCount;
@@ -183,17 +190,12 @@ export function computeAnalytics(audits: AuditInspection[]): AuditAnalyticsSumma
         pEntry.occurrences += 1;
         pEntry.totalQuantity += qty;
         pEntry.polesSet.add(`${audit.id}_${pole.number}`);
-        if (prob.status === 'Regularizado') {
+        if (pole.status === 'Conforme') {
           pEntry.regularizedCount += 1;
         } else {
           pEntry.pendingCount += 1;
         }
         problemMap.set(prob.problem, pEntry);
-
-        const sEntry = statusMap.get(prob.status) ?? { count: 0, quantity: 0 };
-        sEntry.count += 1;
-        sEntry.quantity += qty;
-        statusMap.set(prob.status, sEntry);
       }
 
       evidenceRecords.push({

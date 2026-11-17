@@ -162,13 +162,13 @@ export function EvidenceView({ audits, onOpenAudit }: EvidenceViewProps) {
                     <ul className="divide-y divide-slate-100 rounded-md border border-slate-200">
                       {rec.problems.map((pr) => (
                         <li key={pr.id} className="flex items-center justify-between gap-2 px-3 py-2 text-xs">
-                          <span className="font-medium text-slate-800">{pr.problem}</span>
-                          <div className="flex items-center gap-2.5 shrink-0">
-                            <span className="font-mono font-semibold text-slate-700 tabular-nums">
-                              Qtd: {pr.quantity}
-                            </span>
-                            <StatusText status={pr.status} />
-                          </div>
+                          <span className="font-medium text-slate-800">
+                            {pr.problem}
+                            {pr.note ? <span className="text-slate-500"> — {pr.note}</span> : null}
+                          </span>
+                          <span className="font-mono font-semibold text-slate-700 tabular-nums shrink-0">
+                            Qtd: {pr.quantity}
+                          </span>
                         </li>
                       ))}
                     </ul>

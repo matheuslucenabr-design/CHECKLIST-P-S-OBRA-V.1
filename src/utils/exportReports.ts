@@ -192,7 +192,7 @@ export function exportAuditToPdf(audit: AuditInspection): void {
           idx === 0 ? pType : '',
           prob.note ? `${prob.problem}\nObs: ${prob.note}` : prob.problem,
           String(prob.quantity),
-          prob.status,
+          idx === 0 ? pole.status : '',
           idx === 0 ? pPhotos : '',
         ]);
       });
@@ -360,7 +360,6 @@ export function exportAuditToExcel(audit: AuditInspection): void {
     'Status do Poste',
     'Problema Identificado',
     'Quantidade',
-    'Status do Problema',
     'Observação do Item',
     'Observação do Poste',
     'Qtd. Fotos Anexadas',
@@ -378,7 +377,6 @@ export function exportAuditToExcel(audit: AuditInspection): void {
         pole.status,
         'Sem não conformidades registradas',
         0,
-        pole.status,
         '—',
         pole.observation || '—',
         pole.photos.length,
@@ -393,7 +391,6 @@ export function exportAuditToExcel(audit: AuditInspection): void {
           pole.status,
           prob.problem,
           prob.quantity,
-          prob.status,
           prob.note || '—',
           pole.observation || '—',
           pole.photos.length,
@@ -411,7 +408,6 @@ export function exportAuditToExcel(audit: AuditInspection): void {
     { wch: 16 },
     { wch: 48 },
     { wch: 12 },
-    { wch: 16 },
     { wch: 28 },
     { wch: 28 },
     { wch: 18 },
@@ -503,7 +499,7 @@ export function exportConsolidatedExcel(audits: AuditInspection[]): void {
 
   // Sheet 3: Base Completa de Ocorrências
   const detailRows: Array<Array<string | number>> = [
-    ['Projeto', 'Bairro', 'Data', 'Fiscal', 'Poste', 'ID Poste', 'Tipo', 'Status Poste', 'Problema', 'Quantidade', 'Status Problema', 'Fotos'],
+    ['Projeto', 'Bairro', 'Data', 'Fiscal', 'Poste', 'ID Poste', 'Tipo', 'Status Poste', 'Problema', 'Quantidade', 'Detalhe', 'Fotos'],
   ];
   for (const a of audits) {
     for (const pole of a.poles) {
@@ -519,7 +515,7 @@ export function exportConsolidatedExcel(audits: AuditInspection[]): void {
           pole.status,
           'Conforme / Sem irregularidades',
           0,
-          pole.status,
+          '—',
           pole.photos.length,
         ]);
       } else {
@@ -535,7 +531,7 @@ export function exportConsolidatedExcel(audits: AuditInspection[]): void {
             pole.status,
             prob.problem,
             prob.quantity,
-            prob.status,
+            prob.note || '—',
             pole.photos.length,
           ]);
         }
@@ -554,7 +550,7 @@ export function exportConsolidatedExcel(audits: AuditInspection[]): void {
     { wch: 14 },
     { wch: 46 },
     { wch: 12 },
-    { wch: 16 },
+    { wch: 24 },
     { wch: 10 },
   ];
   XLSX.utils.book_append_sheet(wb, wsDetails, 'Base de Ocorrências');
@@ -735,7 +731,7 @@ export async function exportAuditToWord(audit: AuditInspection): Promise<void> {
               makeDocxCell(idx === 0 ? pole.type || '—' : ''),
               makeDocxCell(prob.note ? `${prob.problem} (${prob.note})` : prob.problem),
               makeDocxCell(String(prob.quantity)),
-              makeDocxCell(prob.status),
+              makeDocxCell(idx === 0 ? pole.status : ''),
               makeDocxCell(idx === 0 ? `${pole.photos.length}/4` : ''),
             ],
           })
@@ -785,7 +781,7 @@ export async function exportAuditToWord(audit: AuditInspection): Promise<void> {
             spacing: { after: 100 },
             children: [
               new TextRun({
-                text: `Problemas: ${pole.problems.map((pr) => `${pr.problem} (Qtd: ${pr.quantity} - ${pr.status})`).join('; ')}`,
+                text: `Problemas: ${pole.problems.map((pr) => `${pr.problem} (Qtd: ${pr.quantity}${pr.note ? ` - ${pr.note}` : ''})`).join('; ')}`,
                 size: 18,
                 color: '475569',
                 font: 'Calibri',

@@ -277,16 +277,16 @@ export function AnalyticsView({ audits }: AnalyticsViewProps) {
 
           <div className="divide-y divide-slate-200">
             <div className="p-5">
-              <h3 className="mb-3 text-xs font-semibold text-slate-700">Status dos Problemas</h3>
+              <h3 className="mb-3 text-xs font-semibold text-slate-700">Status dos Postes</h3>
               {stats.statusStats.length === 0 ? (
-                <p className="text-xs text-slate-500">Nenhuma ocorrência registrada.</p>
+                <p className="text-xs text-slate-500">Nenhum poste registrado.</p>
               ) : (
                 <div className="space-y-2.5">
                   {stats.statusStats.map((st) => (
                     <div key={st.status} className="flex items-center justify-between text-xs">
                       <StatusText status={st.status} />
                       <span className="font-mono text-slate-700 tabular-nums">
-                        {st.count} ocorrência(s) · Qtd: {st.quantity}
+                        {st.count} poste(s) · Qtd. problemas: {st.quantity}
                       </span>
                     </div>
                   ))}

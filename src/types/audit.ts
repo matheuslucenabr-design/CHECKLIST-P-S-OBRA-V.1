@@ -22,12 +22,9 @@ export const PROBLEM_OPTIONS = [
 export type ProblemType = (typeof PROBLEM_OPTIONS)[number];
 
 export const POLE_TYPE_OPTIONS = [
-  'Concreto DT',
-  'Concreto Circular',
-  'Madeira',
-  'Fibra / Polímero',
-  'Aço',
-  'Outro',
+  'DUPLO T',
+  'CIRCULAR',
+  'FIBRA',
 ] as const;
 
 export const PROBLEM_STATUS_OPTIONS = [
@@ -42,8 +39,6 @@ export type ProblemStatus = (typeof PROBLEM_STATUS_OPTIONS)[number];
 export const POLE_STATUS_OPTIONS = [
   'Conforme',
   'Não Conforme',
-  'Pendente',
-  'Regularizado',
 ] as const;
 
 export type PoleStatus = (typeof POLE_STATUS_OPTIONS)[number];
@@ -62,7 +57,7 @@ export interface PoleProblem {
   id: string;
   problem: string;
   quantity: number;
-  status: ProblemStatus;
+  status?: ProblemStatus;
   note?: string;
 }
 
@@ -107,7 +102,7 @@ export function createEmptyPole(number: number): PoleInspection {
   return {
     number,
     poleId: '',
-    type: 'Concreto DT',
+    type: 'DUPLO T',
     status: 'Conforme',
     problems: [],
     photos: [],

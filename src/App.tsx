@@ -166,13 +166,14 @@ export default function App() {
       {/* Top Bar Contract: 3 zones separated by gap-8 */}
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-8 px-4 py-3 sm:px-6">
-          {/* Zone 1: Single-line Wordmark */}
+          {/* Zone 1: Single-line Wordmark + Version Counter */}
           <button
             type="button"
             onClick={() => setActiveTab('checklist')}
-            className="font-display text-base font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0 sm:text-lg"
+            className="flex items-baseline gap-2 font-display text-base font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0 sm:text-lg"
           >
-            Blindagem Audit
+            <span className="font-mono text-[11px] font-medium lowercase text-slate-400">v.2</span>
+            <span>Blindagem Audit</span>
           </button>
 
           {/* Zone 2: Clean single-line navigation links */}
