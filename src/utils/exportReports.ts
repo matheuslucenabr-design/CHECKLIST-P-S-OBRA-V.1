@@ -398,7 +398,7 @@ export async function exportAuditToExcel(audit: AuditInspection): Promise<void> 
     ['Fotos de Evidência Anexadas', summary.totalPhotos],
   ]);
 
-  // Sheet 2: Checklist de Postes (com imagens embutidas na célula EVIDENCIAS FOTOGRAFICAS)
+  // Sheet 2: Checklist de Postes (sem coluna J)
   const wsChecklist = wb.addWorksheet('Checklist de Postes');
   wsChecklist.columns = [
     { width: 13 }, // A: Poste Nº
@@ -409,8 +409,7 @@ export async function exportAuditToExcel(audit: AuditInspection): Promise<void> 
     { width: 12 }, // F: Quantidade
     { width: 28 }, // G: Observação do Item
     { width: 28 }, // H: Observação do Poste
-    { width: 16 }, // I: Qtd. Fotos Anexadas
-    { width: 58 }, // J: EVIDENCIAS FOTOGRAFICAS
+    { width: 18 }, // I: Qtd. Fotos Anexadas
   ];
 
   const headerRow = wsChecklist.addRow([
@@ -423,7 +422,6 @@ export async function exportAuditToExcel(audit: AuditInspection): Promise<void> 
     'Observação do Item',
     'Observação do Poste',
     'Qtd. Fotos Anexadas',
-    'EVIDENCIAS FOTOGRAFICAS',
   ]);
   headerRow.height = 26;
   headerRow.eachCell((cell) => {
@@ -434,7 +432,6 @@ export async function exportAuditToExcel(audit: AuditInspection): Promise<void> 
   });
 
   for (const pole of audit.poles) {
-    const poleStartRow = wsChecklist.rowCount + 1;
     const items =
       pole.problems.length === 0
         ? [{ problem: 'Sem não conformidades registradas', quantity: 0, note: '—' }]
@@ -444,14 +441,7 @@ export async function exportAuditToExcel(audit: AuditInspection): Promise<void> 
             note: pr.note || '—',
           }));
 
-    const numRows = items.length;
-    const photos = pole.photos.slice(0, 4);
-    const photoGridRows = photos.length > 2 ? 2 : photos.length > 0 ? 1 : 0;
-    const totalNeededHeightPt = photoGridRows === 2 ? 232 : photoGridRows === 1 ? 118 : 24;
-    const rowHeightPt = Math.max(24, Math.ceil(totalNeededHeightPt / numRows));
-
-    for (let i = 0; i < numRows; i++) {
-      const item = items[i];
+    for (const item of items) {
       const row = wsChecklist.addRow([
         `Poste ${formatPoleNumber(pole.number)}`,
         pole.poleId || '—',
@@ -461,10 +451,9 @@ export async function exportAuditToExcel(audit: AuditInspection): Promise<void> 
         item.quantity,
         item.note,
         pole.observation || '—',
-        photos.length,
-        photos.length === 0 ? 'Sem evidência fotográfica' : '',
+        pole.photos.length,
       ]);
-      row.height = rowHeightPt;
+      row.height = 22;
       row.eachCell((cell, colNumber) => {
         cell.border = thinBorder;
         cell.font = { size: 10, color: { argb: 'FF0F172A' } };
@@ -474,58 +463,7 @@ export async function exportAuditToExcel(audit: AuditInspection): Promise<void> 
           wrapText: true,
         };
       });
-
-      if (photos.length === 0) {
-        const photoCell = row.getCell(10);
-        photoCell.font = { size: 9, italic: true, color: { argb: 'FF64748B' } };
-        photoCell.alignment = { vertical: 'middle', horizontal: 'center' };
-      }
     }
-
-    const poleEndRow = wsChecklist.rowCount;
-
-    if (numRows > 1) {
-      wsChecklist.mergeCells(`J${poleStartRow}:J${poleEndRow}`);
-    }
-
-    // Embed actual pole photos inside Column J (0-based col = 9)
-    photos.forEach((photo, idx) => {
-      try {
-        const imageId = wb.addImage({
-          base64: photo.dataUrl,
-          extension: getImageExtensionForExcel(photo.dataUrl),
-        });
-
-        const gridCol = idx % 2;
-        const gridRow = Math.floor(idx / 2);
-
-        const maxW = 184;
-        const maxH = 136;
-        let imgW = maxW;
-        let imgH = maxH;
-        if (photo.width > 0 && photo.height > 0) {
-          const ratio = photo.width / photo.height;
-          if (maxW / maxH > ratio) {
-            imgH = maxH;
-            imgW = Math.round(maxH * ratio);
-          } else {
-            imgW = maxW;
-            imgH = Math.round(maxW / ratio);
-          }
-        }
-
-        const tlCol = 9 + (gridCol === 0 ? 0.03 : 0.50);
-        const tlRow = (poleStartRow - 1) + (gridRow === 0 ? 0.05 : 0.5 * numRows + 0.03);
-
-        wsChecklist.addImage(imageId, {
-          tl: { col: tlCol, row: tlRow },
-          ext: { width: imgW, height: imgH },
-          editAs: 'oneCell',
-        });
-      } catch {
-        // Ignore malformed image
-      }
-    });
   }
 
   // Sheet 3: Indicadores por Problema
@@ -572,6 +510,102 @@ export async function exportAuditToExcel(audit: AuditInspection): Promise<void> 
         vertical: 'middle',
         horizontal: colNumber === 1 ? 'left' : 'center',
       };
+    });
+  }
+
+  // Sheet 4: EVIDENCIA FOTOGRAFICA
+  const wsEvidence = wb.addWorksheet('EVIDENCIA FOTOGRAFICA');
+  wsEvidence.columns = [
+    { width: 18 }, // A: ID POSTE
+    { width: 16 }, // B: TIPO
+    { width: 18 }, // C: STATUS DO POSTE
+    { width: 44 }, // D: OBSERVAÇÃO DO ITEM
+    { width: 32 }, // E: EVIDENCIA 1
+    { width: 32 }, // F: EVIDENCIA 2
+    { width: 32 }, // G: EVIDENCIA 3
+    { width: 32 }, // H: EVIDENCIA 4
+  ];
+
+  const evHeaderRow = wsEvidence.addRow([
+    'ID POSTE',
+    'TIPO',
+    'STATUS DO POSTE',
+    'OBSERVAÇÃO DO ITEM',
+    'EVIDENCIA 1',
+    'EVIDENCIA 2',
+    'EVIDENCIA 3',
+    'EVIDENCIA 4',
+  ]);
+  evHeaderRow.height = 26;
+  evHeaderRow.eachCell((cell) => {
+    cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E40AF' } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = thinBorder;
+  });
+
+  for (const pole of audit.poles) {
+    const photos = pole.photos.slice(0, 4);
+    const itemNotesText =
+      pole.problems.length === 0
+        ? 'Sem não conformidades registradas'
+        : pole.problems
+            .map((pr) => (pr.note ? `${pr.problem}: ${pr.note}` : pr.problem))
+            .join('\n');
+
+    const evRow = wsEvidence.addRow([
+      pole.poleId || `Poste ${formatPoleNumber(pole.number)}`,
+      pole.type || '—',
+      pole.status,
+      itemNotesText,
+      photos[0] ? '' : '—',
+      photos[1] ? '' : '—',
+      photos[2] ? '' : '—',
+      photos[3] ? '' : '—',
+    ]);
+
+    evRow.height = photos.length > 0 ? 136 : 26;
+    evRow.eachCell((cell, colNumber) => {
+      cell.border = thinBorder;
+      cell.font = { size: 10, color: { argb: 'FF0F172A' } };
+      cell.alignment = {
+        vertical: 'middle',
+        horizontal: colNumber >= 5 ? 'center' : 'left',
+        wrapText: true,
+      };
+    });
+
+    const rowIndex0Based = evRow.number - 1;
+    photos.forEach((photo, idx) => {
+      try {
+        const imageId = wb.addImage({
+          base64: photo.dataUrl,
+          extension: getImageExtensionForExcel(photo.dataUrl),
+        });
+
+        const maxW = 212;
+        const maxH = 166;
+        let imgW = maxW;
+        let imgH = maxH;
+        if (photo.width > 0 && photo.height > 0) {
+          const ratio = photo.width / photo.height;
+          if (maxW / maxH > ratio) {
+            imgH = maxH;
+            imgW = Math.round(maxH * ratio);
+          } else {
+            imgW = maxW;
+            imgH = Math.round(maxW / ratio);
+          }
+        }
+
+        wsEvidence.addImage(imageId, {
+          tl: { col: 4 + idx + 0.04, row: rowIndex0Based + 0.05 },
+          ext: { width: imgW, height: imgH },
+          editAs: 'oneCell',
+        });
+      } catch {
+        // Ignore malformed image
+      }
     });
   }
 
