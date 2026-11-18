@@ -180,11 +180,11 @@ export function exportAuditToPdf(audit: AuditInspection): void {
   );
   currentY += 5;
 
-  // Per-Pole Problem List followed immediately by a horizontal row of undistorted photos
+  // Per-Pole Problem List followed immediately by undistorted photos (+50% scale: 63.75mm x 51mm)
   const usableWidth = pageWidth - margin * 2;
-  const photoGap = 4;
-  const slotWidth = (usableWidth - photoGap * 3) / 4; // 4 photos in a single line
-  const maxSlotHeight = 34;
+  const photoGap = 10;
+  const slotWidth = ((usableWidth - 4 * 3) / 4) * 1.5; // +50% over previous 42.5mm -> 63.75mm
+  const maxSlotHeight = 34 * 1.5; // +50% over previous 34mm -> 51mm
 
   for (const pole of audit.poles) {
     const poleStatus = pole.problems.length > 0 ? 'Não Conforme' : 'Conforme';
@@ -248,8 +248,8 @@ export function exportAuditToPdf(audit: AuditInspection): void {
 
     const photos = pole.photos.slice(0, 4);
     if (photos.length > 0) {
-      const neededPhotoBlockH = maxSlotHeight + 13;
-      if (currentY + neededPhotoBlockH > pageHeight - 14) {
+      const firstRowNeededH = maxSlotHeight + 13;
+      if (currentY + firstRowNeededH > pageHeight - 14) {
         doc.addPage();
         currentY = 16;
       }
@@ -260,58 +260,69 @@ export function exportAuditToPdf(audit: AuditInspection): void {
       doc.text(`Evidências Fotográficas — ${pNum} (${photos.length}/4):`, margin, currentY + 2.5);
       currentY += 4.5;
 
-      photos.forEach((photo, idx) => {
-        const slotX = margin + idx * (slotWidth + photoGap);
-        const slotY = currentY;
-
-        try {
-          const props = doc.getImageProperties(photo.dataUrl);
-          const natW = props.width || photo.width || 4;
-          const natH = props.height || photo.height || 3;
-          const imgRatio = natW / natH;
-          const boxRatio = slotWidth / maxSlotHeight;
-
-          let drawW = slotWidth;
-          let drawH = maxSlotHeight;
-          if (imgRatio > boxRatio) {
-            drawW = slotWidth;
-            drawH = slotWidth / imgRatio;
-          } else {
-            drawH = maxSlotHeight;
-            drawW = maxSlotHeight * imgRatio;
-          }
-
-          const offsetX = slotX + (slotWidth - drawW) / 2;
-          const offsetY = slotY + (maxSlotHeight - drawH) / 2;
-
-          doc.addImage(
-            photo.dataUrl,
-            getImageFormatForPdf(photo.dataUrl),
-            offsetX,
-            offsetY,
-            drawW,
-            drawH,
-            undefined,
-            'FAST'
-          );
-          doc.setDrawColor(203, 213, 225);
-          doc.rect(offsetX, offsetY, drawW, drawH);
-
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(6.8);
-          doc.setTextColor(100, 116, 139);
-          doc.text(`Foto ${idx + 1}/${photos.length}`, slotX + slotWidth / 2, slotY + maxSlotHeight + 3.5, {
-            align: 'center',
-          });
-        } catch {
-          doc.setDrawColor(203, 213, 225);
-          doc.rect(slotX, slotY, slotWidth, maxSlotHeight);
-          doc.setFontSize(7);
-          doc.text('Imagem indisponível', slotX + 3, slotY + maxSlotHeight / 2);
+      for (let rowStart = 0; rowStart < photos.length; rowStart += 2) {
+        if (rowStart > 0 && currentY + maxSlotHeight + 9 > pageHeight - 14) {
+          doc.addPage();
+          currentY = 16;
         }
-      });
 
-      currentY += maxSlotHeight + 9;
+        const pair = photos.slice(rowStart, rowStart + 2);
+        pair.forEach((photo, colIdx) => {
+          const idx = rowStart + colIdx;
+          const slotX = margin + colIdx * (slotWidth + photoGap);
+          const slotY = currentY;
+
+          try {
+            const props = doc.getImageProperties(photo.dataUrl);
+            const natW = props.width || photo.width || 4;
+            const natH = props.height || photo.height || 3;
+            const imgRatio = natW / natH;
+            const boxRatio = slotWidth / maxSlotHeight;
+
+            let drawW = slotWidth;
+            let drawH = maxSlotHeight;
+            if (imgRatio > boxRatio) {
+              drawW = slotWidth;
+              drawH = slotWidth / imgRatio;
+            } else {
+              drawH = maxSlotHeight;
+              drawW = maxSlotHeight * imgRatio;
+            }
+
+            const offsetX = slotX + (slotWidth - drawW) / 2;
+            const offsetY = slotY + (maxSlotHeight - drawH) / 2;
+
+            doc.addImage(
+              photo.dataUrl,
+              getImageFormatForPdf(photo.dataUrl),
+              offsetX,
+              offsetY,
+              drawW,
+              drawH,
+              undefined,
+              'FAST'
+            );
+            doc.setDrawColor(203, 213, 225);
+            doc.rect(offsetX, offsetY, drawW, drawH);
+
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7);
+            doc.setTextColor(100, 116, 139);
+            doc.text(`Foto ${idx + 1}/${photos.length}`, slotX + slotWidth / 2, slotY + maxSlotHeight + 3.8, {
+              align: 'center',
+            });
+          } catch {
+            doc.setDrawColor(203, 213, 225);
+            doc.rect(slotX, slotY, slotWidth, maxSlotHeight);
+            doc.setFontSize(7);
+            doc.text('Imagem indisponível', slotX + 3, slotY + maxSlotHeight / 2);
+          }
+        });
+
+        currentY += maxSlotHeight + 8;
+      }
+
+      currentY += 2;
     } else {
       currentY += 4;
     }
