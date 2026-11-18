@@ -148,3 +148,7 @@ export function createEmptyAudit(): AuditInspection {
 export function formatPoleNumber(n: number): string {
   return String(n).padStart(2, '0');
 }
+
+export function derivePoleStatus(problems: PoleProblem[]): PoleStatus {
+  return problems.length > 0 ? 'Não Conforme' : 'Conforme';
+}

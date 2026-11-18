@@ -180,125 +180,140 @@ export function exportAuditToPdf(audit: AuditInspection): void {
   );
   currentY += 5;
 
-  // Checklist Table
-  const tableRows: Array<[string, string, string, string, string, string, string]> = [];
+  // Per-Pole Problem List followed immediately by a horizontal row of undistorted photos
+  const usableWidth = pageWidth - margin * 2;
+  const photoGap = 4;
+  const slotWidth = (usableWidth - photoGap * 3) / 4; // 4 photos in a single line
+  const maxSlotHeight = 34;
+
   for (const pole of audit.poles) {
+    const poleStatus = pole.problems.length > 0 ? 'Não Conforme' : 'Conforme';
     const pNum = `Poste ${formatPoleNumber(pole.number)}`;
     const pId = pole.poleId || '—';
     const pType = pole.type || '—';
-    const pPhotos = `${pole.photos.length} foto(s)`;
 
+    if (currentY > pageHeight - 48) {
+      doc.addPage();
+      currentY = 16;
+    }
+
+    const poleRows: Array<[string, string, string, string, string, string]> = [];
     if (pole.problems.length === 0) {
-      tableRows.push([pNum, pId, pType, 'Sem não conformidades registradas', '0', pole.status, pPhotos]);
+      poleRows.push([pNum, pId, pType, 'Sem não conformidades registradas', '0', poleStatus]);
     } else {
       pole.problems.forEach((prob, idx) => {
-        tableRows.push([
+        poleRows.push([
           idx === 0 ? pNum : '',
           idx === 0 ? pId : '',
           idx === 0 ? pType : '',
           prob.note ? `${prob.problem}\nObs: ${prob.note}` : prob.problem,
           String(prob.quantity),
-          idx === 0 ? pole.status : '',
-          idx === 0 ? pPhotos : '',
+          idx === 0 ? poleStatus : '',
         ]);
       });
     }
-  }
 
-  autoTable(doc, {
-    startY: currentY,
-    margin: { left: margin, right: margin },
-    theme: 'grid',
-    styles: { fontSize: 7.8, cellPadding: 2.2, textColor: [15, 23, 42], lineColor: [226, 232, 240], valign: 'middle' },
-    headStyles: { fillColor: [30, 64, 175], textColor: [255, 255, 255], fontStyle: 'bold' },
-    head: [['Poste', 'ID', 'Tipo', 'Problema Identificado', 'Qtd', 'Status', 'Fotos']],
-    body: tableRows,
-    columnStyles: {
-      0: { cellWidth: 18, fontStyle: 'bold' },
-      1: { cellWidth: 20 },
-      2: { cellWidth: 24 },
-      3: { cellWidth: 'auto' },
-      4: { cellWidth: 12, halign: 'center' },
-      5: { cellWidth: 24 },
-      6: { cellWidth: 18, halign: 'center' },
-    },
-  });
+    autoTable(doc, {
+      startY: currentY,
+      margin: { left: margin, right: margin },
+      theme: 'grid',
+      styles: { fontSize: 8, cellPadding: 2.3, textColor: [15, 23, 42], lineColor: [226, 232, 240], valign: 'middle' },
+      headStyles: { fillColor: [30, 64, 175], textColor: [255, 255, 255], fontStyle: 'bold' },
+      head: [['Poste', 'ID', 'Tipo', 'Problema Identificado', 'Qtd', 'Status']],
+      body: poleRows,
+      columnStyles: {
+        0: { cellWidth: 20, fontStyle: 'bold' },
+        1: { cellWidth: 22 },
+        2: { cellWidth: 22 },
+        3: { cellWidth: 'auto' },
+        4: { cellWidth: 12, halign: 'center' },
+        5: { cellWidth: 26 },
+      },
+    });
 
-  // Photographic Evidence Section
-  const polesWithPhotos = audit.poles.filter((p) => p.photos.length > 0);
-  if (polesWithPhotos.length > 0) {
-    doc.addPage();
-    let y = 16;
+    currentY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 2.5;
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.setTextColor(15, 23, 42);
-    doc.text('CADERNO DE EVIDÊNCIAS FOTOGRÁFICAS', margin, y);
-    y += 5;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.setTextColor(100, 116, 139);
-    doc.text(`Projeto: ${audit.projeto || '—'}  |  Bairro: ${audit.bairro || '—'}  |  Total de Fotos: ${summary.totalPhotos}`, margin, y);
-    y += 7;
-
-    for (const pole of polesWithPhotos) {
-      const boxHeight = pole.photos.length > 2 ? 125 : 68;
-      if (y + boxHeight > pageHeight - 16) {
+    if (pole.observation && pole.observation.trim()) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(7.8);
+      doc.setTextColor(71, 85, 105);
+      const obsLines = doc.splitTextToSize(`Obs. do ${pNum}: ${pole.observation.trim()}`, usableWidth);
+      if (currentY + obsLines.length * 3.8 > pageHeight - 16) {
         doc.addPage();
-        y = 16;
+        currentY = 16;
+      }
+      doc.text(obsLines, margin, currentY + 1.5);
+      currentY += obsLines.length * 3.8 + 2.5;
+    }
+
+    const photos = pole.photos.slice(0, 4);
+    if (photos.length > 0) {
+      const neededPhotoBlockH = maxSlotHeight + 13;
+      if (currentY + neededPhotoBlockH > pageHeight - 14) {
+        doc.addPage();
+        currentY = 16;
       }
 
-      doc.setFillColor(241, 245, 249);
-      doc.rect(margin, y, pageWidth - margin * 2, 10, 'F');
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(15, 23, 42);
-      const probNames =
-        pole.problems.length > 0
-          ? pole.problems.map((pr) => `${pr.problem} (${pr.quantity})`).join(' • ')
-          : 'Sem irregularidades';
-      doc.text(
-        `POSTE ${formatPoleNumber(pole.number)}  |  ID: ${pole.poleId || '—'}  |  Tipo: ${pole.type || '—'}  |  Status: ${pole.status}`,
-        margin + 3,
-        y + 6.5
-      );
-      y += 12;
+      doc.setFontSize(7.8);
+      doc.setTextColor(51, 65, 85);
+      doc.text(`Evidências Fotográficas — ${pNum} (${photos.length}/4):`, margin, currentY + 2.5);
+      currentY += 4.5;
 
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(71, 85, 105);
-      const splitProbs = doc.splitTextToSize(`Ocorrências: ${probNames}`, pageWidth - margin * 2);
-      doc.text(splitProbs, margin, y);
-      y += splitProbs.length * 3.8 + 2;
-
-      const imgWidth = (pageWidth - margin * 2 - 6) / 2;
-      const imgHeight = 48;
-
-      pole.photos.slice(0, 4).forEach((photo, idx) => {
-        const col = idx % 2;
-        const row = Math.floor(idx / 2);
-        const xPos = margin + col * (imgWidth + 6);
-        const yPos = y + row * (imgHeight + 9);
+      photos.forEach((photo, idx) => {
+        const slotX = margin + idx * (slotWidth + photoGap);
+        const slotY = currentY;
 
         try {
-          doc.setDrawColor(203, 213, 225);
-          doc.rect(xPos, yPos, imgWidth, imgHeight);
-          doc.addImage(photo.dataUrl, getImageFormatForPdf(photo.dataUrl), xPos + 0.5, yPos + 0.5, imgWidth - 1, imgHeight - 1, undefined, 'FAST');
-          doc.setFontSize(7);
-          doc.setTextColor(100, 116, 139);
-          doc.text(
-            `Foto ${idx + 1}/${pole.photos.length} - ${new Date(photo.capturedAt).toLocaleString('pt-BR')}`,
-            xPos,
-            yPos + imgHeight + 4
+          const props = doc.getImageProperties(photo.dataUrl);
+          const natW = props.width || photo.width || 4;
+          const natH = props.height || photo.height || 3;
+          const imgRatio = natW / natH;
+          const boxRatio = slotWidth / maxSlotHeight;
+
+          let drawW = slotWidth;
+          let drawH = maxSlotHeight;
+          if (imgRatio > boxRatio) {
+            drawW = slotWidth;
+            drawH = slotWidth / imgRatio;
+          } else {
+            drawH = maxSlotHeight;
+            drawW = maxSlotHeight * imgRatio;
+          }
+
+          const offsetX = slotX + (slotWidth - drawW) / 2;
+          const offsetY = slotY + (maxSlotHeight - drawH) / 2;
+
+          doc.addImage(
+            photo.dataUrl,
+            getImageFormatForPdf(photo.dataUrl),
+            offsetX,
+            offsetY,
+            drawW,
+            drawH,
+            undefined,
+            'FAST'
           );
+          doc.setDrawColor(203, 213, 225);
+          doc.rect(offsetX, offsetY, drawW, drawH);
+
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(6.8);
+          doc.setTextColor(100, 116, 139);
+          doc.text(`Foto ${idx + 1}/${photos.length}`, slotX + slotWidth / 2, slotY + maxSlotHeight + 3.5, {
+            align: 'center',
+          });
         } catch {
-          doc.setFontSize(8);
-          doc.text('Imagem indisponível', xPos + 4, yPos + 20);
+          doc.setDrawColor(203, 213, 225);
+          doc.rect(slotX, slotY, slotWidth, maxSlotHeight);
+          doc.setFontSize(7);
+          doc.text('Imagem indisponível', slotX + 3, slotY + maxSlotHeight / 2);
         }
       });
 
-      const rowsUsed = Math.ceil(pole.photos.length / 2);
-      y += rowsUsed * (imgHeight + 9) + 6;
+      currentY += maxSlotHeight + 9;
+    } else {
+      currentY += 4;
     }
   }
 

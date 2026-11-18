@@ -18,15 +18,14 @@ import {
   AuditInspection,
   MAX_PHOTOS_PER_POLE,
   MAX_POLES,
-  POLE_STATUS_OPTIONS,
   POLE_TYPE_OPTIONS,
   PROBLEM_OPTIONS,
   PhotoEvidence,
   PoleInspection,
   PoleProblem,
-  PoleStatus,
   createEmptyPole,
   createEmptyProblem,
+  derivePoleStatus,
   formatPoleNumber,
 } from '../types/audit';
 import { compressImageFile } from '../storage/auditDb';
@@ -124,10 +123,9 @@ export function AuditFormView({
       const usedSet = new Set(pole.problems.map((p) => p.problem));
       const nextDefault = PROBLEM_OPTIONS.find((opt) => !usedSet.has(opt)) ?? PROBLEM_OPTIONS[0];
       const nextProblems = [...pole.problems, createEmptyProblem(nextDefault)];
-      const nextStatus: PoleStatus = pole.status === 'Conforme' ? 'Não Conforme' : pole.status;
       return {
         ...pole,
-        status: nextStatus,
+        status: derivePoleStatus(nextProblems),
         problems: nextProblems,
       };
     });
@@ -146,7 +144,7 @@ export function AuditFormView({
       const nextProblems = [...pole.problems, ...additions];
       return {
         ...pole,
-        status: nextProblems.length > 0 && pole.status === 'Conforme' ? 'Não Conforme' : pole.status,
+        status: derivePoleStatus(nextProblems),
         problems: nextProblems,
       };
     });
@@ -159,6 +157,7 @@ export function AuditFormView({
       const nextProblems = pole.problems.map((pr) => (pr.id === problemId ? { ...pr, ...patch } : pr));
       return {
         ...pole,
+        status: derivePoleStatus(nextProblems),
         problems: nextProblems,
       };
     });
@@ -167,11 +166,9 @@ export function AuditFormView({
   const handleRemoveProblem = (problemId: string) => {
     updatePole(safePoleIndex, (pole) => {
       const nextProblems = pole.problems.filter((pr) => pr.id !== problemId);
-      const nextStatus: PoleStatus =
-        nextProblems.length === 0 && pole.status === 'Não Conforme' ? 'Conforme' : pole.status;
       return {
         ...pole,
-        status: nextStatus,
+        status: derivePoleStatus(nextProblems),
         problems: nextProblems,
       };
     });
@@ -595,7 +592,18 @@ export function AuditFormView({
           <div className="flex flex-wrap gap-2">
             {audit.poles.map((pole, idx) => {
               const isActive = idx === safePoleIndex;
-              const hasIssues = pole.problems.length > 0;
+              const derivedStatus = derivePoleStatus(pole.problems);
+              const isConforming = derivedStatus === 'Conforme';
+              const trimmedId = pole.poleId.trim();
+              const formattedId = trimmedId
+                ? trimmedId.toUpperCase().startsWith('ID')
+                  ? trimmedId
+                  : `ID ${trimmedId}`
+                : '';
+              const labelText = formattedId
+                ? `Poste ${formatPoleNumber(pole.number)} - ${formattedId} - ${pole.photos.length}/${MAX_PHOTOS_PER_POLE}`
+                : `Poste ${formatPoleNumber(pole.number)} - ${pole.photos.length}/${MAX_PHOTOS_PER_POLE}`;
+
               return (
                 <button
                   key={pole.number}
@@ -604,21 +612,14 @@ export function AuditFormView({
                     setActivePoleIndex(idx);
                     setConfirmRemovePoleIdx(null);
                   }}
-                  className={`flex min-h-[42px] items-center gap-2 rounded-md border px-3 py-1.5 text-left transition-colors ${
+                  className={`flex min-h-[42px] items-center rounded-md border px-3 py-1.5 text-left transition-colors ${
                     isActive
-                      ? 'border-blue-700 bg-blue-700 text-white'
-                      : 'border-slate-300 bg-white text-slate-800 hover:border-slate-400 hover:bg-slate-100'
-                  }`}
+                      ? 'border-2 border-blue-700 bg-slate-50 shadow-xs'
+                      : 'border-slate-300 bg-white hover:border-slate-400 hover:bg-slate-50'
+                  } ${isConforming ? 'text-emerald-700' : 'text-red-700'}`}
                 >
-                  <span className="font-mono text-xs font-semibold tabular-nums">
-                    Poste {formatPoleNumber(pole.number)}
-                  </span>
-                  <span
-                    className={`font-mono text-[11px] tabular-nums ${
-                      isActive ? 'text-blue-100' : hasIssues ? 'text-red-700 font-semibold' : 'text-slate-500'
-                    }`}
-                  >
-                    {pole.problems.length}p · {pole.photos.length}/{MAX_PHOTOS_PER_POLE}f
+                  <span className="font-mono text-xs font-semibold tabular-nums whitespace-nowrap">
+                    {labelText}
                   </span>
                 </button>
               );
@@ -706,22 +707,20 @@ export function AuditFormView({
               </select>
             </label>
 
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-semibold text-slate-700">Status do Poste</span>
-              <select
-                value={activePole.status}
-                onChange={(e) =>
-                  updatePole(safePoleIndex, (p) => ({ ...p, status: e.target.value as PoleStatus }))
-                }
-                className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-blue-600 focus:outline-none"
+            <div>
+              <span className="mb-1.5 block text-xs font-semibold text-slate-700">
+                Status do Poste (Automático)
+              </span>
+              <div
+                aria-live="polite"
+                className="flex h-10 w-full items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-3"
               >
-                {POLE_STATUS_OPTIONS.map((st) => (
-                  <option key={st} value={st}>
-                    {st}
-                  </option>
-                ))}
-              </select>
-            </label>
+                <StatusText status={derivePoleStatus(activePole.problems)} />
+                <span className="text-[11px] text-slate-500">
+                  {activePole.problems.length === 0 ? 'Sem problemas' : `${activePole.problems.length} problema(s)`}
+                </span>
+              </div>
+            </div>
           </div>
 
           {/* Checklist of Problems for this Pole */}
