@@ -2,22 +2,22 @@ export const MAX_POLES = 25;
 export const MAX_PHOTOS_PER_POLE = 4;
 
 export const PROBLEM_OPTIONS = [
-  'RAMAL SEM PRENSA CABO',
-  'PRENSA CABO INSTALADO INCORRETAMENTE',
-  'AMARRAÇÃO DE CONCENTRICO PENDENTE',
-  'AUSENCIA DE 5S',
-  'CAIXAS ALARMANDO',
-  'FERRAMENTA ESQUECIDA EM OBRA',
-  'LUMINÁRIA NÃO RELIGADA',
-  'RABIXO NÃO DISPONIBILIZADO',
-  'REINSTALAÇÃO DE LUMINÁRIA INCORRETA',
-  'ATERRAMENTO FORA DO PADRÃO',
-  'AUSENCIA DE BLINDAGEM DO TRAFO',
-  'SEALTUBO DANIFICADO OU INCORRETO',
-  'CAIXA DE BLINDAGEM ABERTA',
-  'EMCABECAMENTO DE REDE INCORRETO OU FORA DO PADRÃO',
-  'ESTRUTURA OU POSTE DANIFICADO',
-  'RAMAL DE CLIENTE INADEQUADO OU LIGAÇÃO EM RABIXO',
+  '1. RAMAL SEM PRENSA CABO',
+  '2. PRENSA CABO INSTALADO INCORRETAMENTE',
+  '3. AMARRAÇÃO DE CONCENTRICO PENDENTE',
+  '4. AUSENCIA DE 5S',
+  '5. CAIXAS ALARMANDO',
+  '6. FERRAMENTA ESQUECIDA EM OBRA',
+  '7. LUMINÁRIA NÃO RELIGADA',
+  '8. RABIXO NÃO DISPONIBILIZADO',
+  '9. REINSTALAÇÃO DE LUMINÁRIA INCORRETA',
+  '10. ATERRAMENTO FORA DO PADRÃO',
+  '11. AUSENCIA DE BLINDAGEM DO TRAFO',
+  '12. SEALTUBO DANIFICADO OU INCORRETO',
+  '13. CAIXA DE BLINDAGEM ABERTA',
+  '14. EMCABECAMENTO DE REDE INCORRETO OU FORA DO PADRÃO',
+  '15. ESTRUTURA OU POSTE DANIFICADO',
+  '16. RAMAL DE CLIENTE INADEQUADO OU LIGAÇÃO EM RABIXO',
 ] as const;
 
 export type ProblemType = (typeof PROBLEM_OPTIONS)[number];
@@ -151,4 +151,15 @@ export function formatPoleNumber(n: number): string {
 
 export function derivePoleStatus(problems: PoleProblem[]): PoleStatus {
   return problems.length > 0 ? 'Não Conforme' : 'Conforme';
+}
+
+export function normalizeProblemLabel(raw: string): string {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return PROBLEM_OPTIONS[0];
+  if ((PROBLEM_OPTIONS as readonly string[]).includes(trimmed)) return trimmed;
+  const withoutPrefix = trimmed.replace(/^\d+\.\s*/, '');
+  const matched = PROBLEM_OPTIONS.find(
+    (opt) => opt.replace(/^\d+\.\s*/, '').toUpperCase() === withoutPrefix.toUpperCase()
+  );
+  return matched ?? trimmed;
 }

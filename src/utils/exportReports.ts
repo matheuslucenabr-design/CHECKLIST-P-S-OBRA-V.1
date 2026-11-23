@@ -180,11 +180,11 @@ export function exportAuditToPdf(audit: AuditInspection): void {
   );
   currentY += 5;
 
-  // Per-Pole Problem List followed immediately by undistorted photos (+50% scale: 63.75mm x 51mm)
+  // Per-Pole Problem List followed immediately by an adaptive, full-width proportional photo grid
   const usableWidth = pageWidth - margin * 2;
-  const photoGap = 10;
-  const slotWidth = ((usableWidth - 4 * 3) / 4) * 1.5; // +50% over previous 42.5mm -> 63.75mm
-  const maxSlotHeight = 34 * 1.5; // +50% over previous 34mm -> 51mm
+  const photoGap = 4;
+  const captionSpace = 4.5;
+  const rowBottomGap = 3.5;
 
   for (const pole of audit.poles) {
     const poleStatus = pole.problems.length > 0 ? 'Não Conforme' : 'Conforme';
@@ -248,81 +248,186 @@ export function exportAuditToPdf(audit: AuditInspection): void {
 
     const photos = pole.photos.slice(0, 4);
     if (photos.length > 0) {
-      const firstRowNeededH = maxSlotHeight + 13;
-      if (currentY + firstRowNeededH > pageHeight - 14) {
+      interface MeasuredPhoto {
+        photo: (typeof photos)[number];
+        globalIdx: number;
+        natW: number;
+        natH: number;
+        drawW: number;
+        drawH: number;
+        valid: boolean;
+      }
+
+      const measuredAll = photos.map((photo, idx) => {
+        try {
+          const props = doc.getImageProperties(photo.dataUrl);
+          return {
+            photo,
+            globalIdx: idx,
+            natW: props.width || photo.width || 4,
+            natH: props.height || photo.height || 3,
+            valid: true,
+          };
+        } catch {
+          return {
+            photo,
+            globalIdx: idx,
+            natW: photo.width || 4,
+            natH: photo.height || 3,
+            valid: false,
+          };
+        }
+      });
+
+      const allPortrait = measuredAll.every((m) => m.natH > m.natW);
+
+      type PhotoRowSpec = {
+        items: typeof measuredAll;
+        cellMaxW: number;
+        cellMaxH: number;
+      };
+
+      const photoRows: PhotoRowSpec[] = [];
+      if (photos.length === 1) {
+        photoRows.push({
+          items: measuredAll,
+          cellMaxW: Math.min(156, usableWidth),
+          cellMaxH: 102,
+        });
+      } else if (photos.length === 2) {
+        photoRows.push({
+          items: measuredAll,
+          cellMaxW: (usableWidth - photoGap) / 2, // 89mm
+          cellMaxH: 78,
+        });
+      } else if (photos.length === 3) {
+        if (allPortrait) {
+          photoRows.push({
+            items: measuredAll,
+            cellMaxW: (usableWidth - photoGap * 2) / 3, // 58mm
+            cellMaxH: 82,
+          });
+        } else {
+          photoRows.push({
+            items: measuredAll.slice(0, 2),
+            cellMaxW: (usableWidth - photoGap) / 2, // 89mm
+            cellMaxH: 72,
+          });
+          photoRows.push({
+            items: measuredAll.slice(2, 3),
+            cellMaxW: 120,
+            cellMaxH: 76,
+          });
+        }
+      } else {
+        // 4 photos: crisp 2x2 grid utilizing full 182mm width
+        const twoColW = (usableWidth - photoGap) / 2; // 89mm
+        photoRows.push({
+          items: measuredAll.slice(0, 2),
+          cellMaxW: twoColW,
+          cellMaxH: 70,
+        });
+        photoRows.push({
+          items: measuredAll.slice(2, 4),
+          cellMaxW: twoColW,
+          cellMaxH: 70,
+        });
+      }
+
+      const fitRow = (spec: PhotoRowSpec): { items: MeasuredPhoto[]; rowImageH: number } => {
+        const fitted: MeasuredPhoto[] = spec.items.map((m) => {
+          const imgRatio = m.natW / m.natH;
+          const boxRatio = spec.cellMaxW / spec.cellMaxH;
+          let drawW = spec.cellMaxW;
+          let drawH = spec.cellMaxH;
+          if (imgRatio > boxRatio) {
+            drawW = spec.cellMaxW;
+            drawH = spec.cellMaxW / imgRatio;
+          } else {
+            drawH = spec.cellMaxH;
+            drawW = spec.cellMaxH * imgRatio;
+          }
+          return { ...m, drawW, drawH };
+        });
+        const rowImageH = Math.max(...fitted.map((f) => f.drawH));
+        return { items: fitted, rowImageH };
+      };
+
+      const computedRows = photoRows.map(fitRow);
+      const firstRowH = computedRows[0].rowImageH + captionSpace + rowBottomGap;
+
+      // Keep section title attached to first photo row
+      if (currentY + 5 + firstRowH > pageHeight - 14) {
         doc.addPage();
         currentY = 16;
       }
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7.8);
-      doc.setTextColor(51, 65, 85);
+      doc.setFontSize(8);
+      doc.setTextColor(30, 41, 59);
       doc.text(`Evidências Fotográficas — ${pNum} (${photos.length}/4):`, margin, currentY + 2.5);
-      currentY += 4.5;
+      currentY += 5;
 
-      for (let rowStart = 0; rowStart < photos.length; rowStart += 2) {
-        if (rowStart > 0 && currentY + maxSlotHeight + 9 > pageHeight - 14) {
+      computedRows.forEach((rowBlock, rowIdx) => {
+        const neededH = rowBlock.rowImageH + captionSpace + rowBottomGap;
+        if (rowIdx > 0 && currentY + neededH > pageHeight - 14) {
           doc.addPage();
           currentY = 16;
         }
 
-        const pair = photos.slice(rowStart, rowStart + 2);
-        pair.forEach((photo, colIdx) => {
-          const idx = rowStart + colIdx;
-          const slotX = margin + colIdx * (slotWidth + photoGap);
-          const slotY = currentY;
+        const totalRowW =
+          rowBlock.items.reduce((sum, item) => sum + item.drawW, 0) +
+          photoGap * (rowBlock.items.length - 1);
+        let cursorX = margin + (usableWidth - totalRowW) / 2;
 
-          try {
-            const props = doc.getImageProperties(photo.dataUrl);
-            const natW = props.width || photo.width || 4;
-            const natH = props.height || photo.height || 3;
-            const imgRatio = natW / natH;
-            const boxRatio = slotWidth / maxSlotHeight;
+        rowBlock.items.forEach((item) => {
+          const drawX = cursorX;
+          const drawY = currentY + (rowBlock.rowImageH - item.drawH) / 2;
 
-            let drawW = slotWidth;
-            let drawH = maxSlotHeight;
-            if (imgRatio > boxRatio) {
-              drawW = slotWidth;
-              drawH = slotWidth / imgRatio;
-            } else {
-              drawH = maxSlotHeight;
-              drawW = maxSlotHeight * imgRatio;
+          if (item.valid) {
+            try {
+              doc.addImage(
+                item.photo.dataUrl,
+                getImageFormatForPdf(item.photo.dataUrl),
+                drawX,
+                drawY,
+                item.drawW,
+                item.drawH,
+                undefined,
+                'NONE'
+              );
+              doc.setDrawColor(203, 213, 225);
+              doc.rect(drawX, drawY, item.drawW, item.drawH);
+            } catch {
+              doc.setDrawColor(203, 213, 225);
+              doc.rect(drawX, drawY, item.drawW, item.drawH);
+              doc.setFontSize(7.5);
+              doc.text('Imagem indisponível', drawX + 3, drawY + item.drawH / 2);
             }
-
-            const offsetX = slotX + (slotWidth - drawW) / 2;
-            const offsetY = slotY + (maxSlotHeight - drawH) / 2;
-
-            doc.addImage(
-              photo.dataUrl,
-              getImageFormatForPdf(photo.dataUrl),
-              offsetX,
-              offsetY,
-              drawW,
-              drawH,
-              undefined,
-              'FAST'
-            );
+          } else {
             doc.setDrawColor(203, 213, 225);
-            doc.rect(offsetX, offsetY, drawW, drawH);
-
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(7);
-            doc.setTextColor(100, 116, 139);
-            doc.text(`Foto ${idx + 1}/${photos.length}`, slotX + slotWidth / 2, slotY + maxSlotHeight + 3.8, {
-              align: 'center',
-            });
-          } catch {
-            doc.setDrawColor(203, 213, 225);
-            doc.rect(slotX, slotY, slotWidth, maxSlotHeight);
-            doc.setFontSize(7);
-            doc.text('Imagem indisponível', slotX + 3, slotY + maxSlotHeight / 2);
+            doc.rect(drawX, drawY, item.drawW, item.drawH);
+            doc.setFontSize(7.5);
+            doc.text('Imagem indisponível', drawX + 3, drawY + item.drawH / 2);
           }
+
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7.2);
+          doc.setTextColor(71, 85, 105);
+          doc.text(
+            `Foto ${item.globalIdx + 1}/${photos.length}`,
+            drawX + item.drawW / 2,
+            drawY + item.drawH + 3.4,
+            { align: 'center' }
+          );
+
+          cursorX += item.drawW + photoGap;
         });
 
-        currentY += maxSlotHeight + 8;
-      }
+        currentY += rowBlock.rowImageH + captionSpace + rowBottomGap;
+      });
 
-      currentY += 2;
+      currentY += 1.5;
     } else {
       currentY += 4;
     }

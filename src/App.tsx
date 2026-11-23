@@ -7,7 +7,13 @@ import {
   saveAudit,
   setActiveAuditId,
 } from './storage/auditDb';
-import { AuditInspection, createEmptyAudit, createId, derivePoleStatus } from './types/audit';
+import {
+  AuditInspection,
+  createEmptyAudit,
+  createId,
+  derivePoleStatus,
+  normalizeProblemLabel,
+} from './types/audit';
 import { AuditFormView } from './components/AuditFormView';
 import { HistoryView } from './components/HistoryView';
 import { AnalyticsView } from './components/AnalyticsView';
@@ -33,10 +39,17 @@ export default function App() {
       const rawStored = await getAllAudits();
       const stored = rawStored.map((a) => ({
         ...a,
-        poles: a.poles.map((p) => ({
-          ...p,
-          status: derivePoleStatus(p.problems),
-        })),
+        poles: a.poles.map((p) => {
+          const normalizedProblems = p.problems.map((pr) => ({
+            ...pr,
+            problem: normalizeProblemLabel(pr.problem),
+          }));
+          return {
+            ...p,
+            problems: normalizedProblems,
+            status: derivePoleStatus(normalizedProblems),
+          };
+        }),
       }));
       setAudits(stored);
       const activeId = getActiveAuditId();
