@@ -433,6 +433,41 @@ export function exportAuditToPdf(audit: AuditInspection): void {
     }
   }
 
+  // Final Problem Summary Table (Total Geral por Problema)
+  if (currentY > pageHeight - 46) {
+    doc.addPage();
+    currentY = 16;
+  } else {
+    currentY += 4;
+  }
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text('RESUMO GERAL DE PROBLEMAS', margin, currentY);
+
+  const activeProblemStats = summary.problemStats.filter((st) => st.totalQuantity > 0);
+  const summaryTableBody: Array<[string, string]> =
+    activeProblemStats.length > 0
+      ? activeProblemStats.map((st) => [st.problem, String(st.totalQuantity)])
+      : [['Nenhuma não conformidade apontada nesta auditoria', '0']];
+
+  autoTable(doc, {
+    startY: currentY + 3,
+    margin: { left: margin, right: margin },
+    theme: 'grid',
+    styles: { fontSize: 8.5, cellPadding: 2.5, textColor: [15, 23, 42], lineColor: [226, 232, 240], valign: 'middle' },
+    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
+    footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold' },
+    head: [['Problema', 'Quantidade Total']],
+    body: summaryTableBody,
+    foot: [['TOTAL GERAL', String(summary.totalProblemQuantity)]],
+    columnStyles: {
+      0: { cellWidth: 'auto' },
+      1: { cellWidth: 38, halign: 'center', fontStyle: 'bold' },
+    },
+  });
+
   // Page Footer
   const pageCount = doc.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
