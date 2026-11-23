@@ -11,8 +11,7 @@ import {
   AuditInspection,
   createEmptyAudit,
   createId,
-  derivePoleStatus,
-  normalizeProblemLabel,
+  normalizePole,
 } from './types/audit';
 import { AuditFormView } from './components/AuditFormView';
 import { HistoryView } from './components/HistoryView';
@@ -39,17 +38,7 @@ export default function App() {
       const rawStored = await getAllAudits();
       const stored = rawStored.map((a) => ({
         ...a,
-        poles: a.poles.map((p) => {
-          const normalizedProblems = p.problems.map((pr) => ({
-            ...pr,
-            problem: normalizeProblemLabel(pr.problem),
-          }));
-          return {
-            ...p,
-            problems: normalizedProblems,
-            status: derivePoleStatus(normalizedProblems),
-          };
-        }),
+        poles: (a.poles ?? []).map((p) => normalizePole(p)),
       }));
       setAudits(stored);
       const activeId = getActiveAuditId();

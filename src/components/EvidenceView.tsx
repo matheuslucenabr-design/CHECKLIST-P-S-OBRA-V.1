@@ -138,7 +138,7 @@ export function EvidenceView({ audits, onOpenAudit }: EvidenceViewProps) {
                     <StatusText status={rec.poleStatus} />
                   </div>
                   <p className="mt-1 text-xs text-slate-500">
-                    Projeto: {rec.projeto} · Bairro: {rec.bairro} · Tipo: {rec.poleType} · Fiscal: {rec.fiscalObra}
+                    Projeto: {rec.projeto} · Bairro: {rec.bairro} · Tipo: {rec.poleType} · Caixas: {rec.shieldingBoxCount} · Fiscal: {rec.fiscalObra}
                   </p>
                 </div>
 
@@ -160,9 +160,14 @@ export function EvidenceView({ audits, onOpenAudit }: EvidenceViewProps) {
                     <p className="text-xs text-slate-500">Nenhuma irregularidade apontada neste poste.</p>
                   ) : (
                     <ul className="divide-y divide-slate-100 rounded-md border border-slate-200">
-                      {rec.problems.map((pr) => (
-                        <li key={pr.id} className="flex items-center justify-between gap-2 px-3 py-2 text-xs">
+                      {rec.problems.map((pr, prIdx) => (
+                        <li key={`${pr.id}_${prIdx}`} className="flex items-center justify-between gap-2 px-3 py-2 text-xs">
                           <span className="font-medium text-slate-800">
+                            {pr.source === 'caixa' && (
+                              <span className="mr-1.5 font-mono text-[11px] font-semibold text-blue-700">
+                                [{pr.sourceLabel}]
+                              </span>
+                            )}
                             {pr.problem}
                             {pr.note ? <span className="text-slate-500"> — {pr.note}</span> : null}
                           </span>

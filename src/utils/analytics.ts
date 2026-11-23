@@ -1,4 +1,11 @@
-import { AuditInspection, PROBLEM_OPTIONS, PhotoEvidence, PoleInspection, PoleProblem } from '../types/audit';
+import {
+  AuditInspection,
+  CombinedProblemEntry,
+  PROBLEM_OPTIONS,
+  PhotoEvidence,
+  PoleInspection,
+  getCombinedPoleProblems,
+} from '../types/audit';
 
 export interface ProblemStat {
   problem: string;
@@ -41,7 +48,8 @@ export interface EvidenceRecord {
   poleId: string;
   poleType: string;
   poleStatus: string;
-  problems: PoleProblem[];
+  problems: CombinedProblemEntry[];
+  shieldingBoxCount: number;
   photos: PhotoEvidence[];
   observation: string;
 }
@@ -83,7 +91,7 @@ export function formatMinutesDuration(minutes: number | null): string {
 }
 
 export function isPoleConforming(pole: PoleInspection): boolean {
-  return pole.status === 'Conforme' && pole.problems.length === 0;
+  return getCombinedPoleProblems(pole).length === 0 && pole.status === 'Conforme';
 }
 
 export function computeAnalytics(audits: AuditInspection[]): AuditAnalyticsSummary {
@@ -150,8 +158,10 @@ export function computeAnalytics(audits: AuditInspection[]): AuditAnalyticsSumma
         bEntry.conforming += 1;
       }
 
-      const poleStatusKey = pole.status === 'Conforme' ? 'Conforme' : 'Não Conforme';
-      const poleQtySum = pole.problems.reduce(
+      const allPoleProblems = getCombinedPoleProblems(pole);
+      const effectiveStatus = allPoleProblems.length > 0 ? 'Não Conforme' : pole.status;
+      const poleStatusKey = effectiveStatus === 'Conforme' ? 'Conforme' : 'Não Conforme';
+      const poleQtySum = allPoleProblems.reduce(
         (acc, p) => acc + (Number.isFinite(p.quantity) && p.quantity > 0 ? p.quantity : 1),
         0
       );
@@ -170,10 +180,10 @@ export function computeAnalytics(audits: AuditInspection[]): AuditAnalyticsSumma
       const poleTypeKey = (pole.type || 'Não informado').trim() || 'Não informado';
       const ptEntry = poleTypeMap.get(poleTypeKey) ?? { count: 0, occurrences: 0 };
       ptEntry.count += 1;
-      ptEntry.occurrences += pole.problems.length;
+      ptEntry.occurrences += allPoleProblems.length;
       poleTypeMap.set(poleTypeKey, ptEntry);
 
-      for (const prob of pole.problems) {
+      for (const prob of allPoleProblems) {
         totalOccurrences += 1;
         const qty = Number.isFinite(prob.quantity) && prob.quantity > 0 ? prob.quantity : 1;
         totalProblemQuantity += qty;
@@ -190,7 +200,7 @@ export function computeAnalytics(audits: AuditInspection[]): AuditAnalyticsSumma
         pEntry.occurrences += 1;
         pEntry.totalQuantity += qty;
         pEntry.polesSet.add(`${audit.id}_${pole.number}`);
-        if (pole.status === 'Conforme') {
+        if (effectiveStatus === 'Conforme') {
           pEntry.regularizedCount += 1;
         } else {
           pEntry.pendingCount += 1;
@@ -207,8 +217,9 @@ export function computeAnalytics(audits: AuditInspection[]): AuditAnalyticsSumma
         poleNumber: pole.number,
         poleId: pole.poleId || `Poste ${String(pole.number).padStart(2, '0')}`,
         poleType: poleTypeKey,
-        poleStatus: pole.status,
-        problems: pole.problems,
+        poleStatus: effectiveStatus,
+        problems: allPoleProblems,
+        shieldingBoxCount: (pole.shieldingBoxes ?? []).length,
         photos: pole.photos,
         observation: pole.observation,
       });

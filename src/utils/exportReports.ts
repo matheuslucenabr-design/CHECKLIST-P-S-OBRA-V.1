@@ -18,7 +18,7 @@ import {
   TextRun,
   WidthType,
 } from 'docx';
-import { AuditInspection, formatPoleNumber } from '../types/audit';
+import { AuditInspection, formatPoleNumber, getCombinedPoleProblems } from '../types/audit';
 import { computeAnalytics, formatMinutesDuration, parseTimeToMinutes } from './analytics';
 
 function sanitizeFileName(raw: string): string {
@@ -187,7 +187,8 @@ export function exportAuditToPdf(audit: AuditInspection): void {
   const rowBottomGap = 3.5;
 
   for (const pole of audit.poles) {
-    const poleStatus = pole.problems.length > 0 ? 'Não Conforme' : 'Conforme';
+    const combinedProblems = getCombinedPoleProblems(pole);
+    const poleStatus = combinedProblems.length > 0 ? 'Não Conforme' : 'Conforme';
     const pNum = `Poste ${formatPoleNumber(pole.number)}`;
     const pId = pole.poleId || '—';
     const pType = pole.type || '—';
@@ -198,15 +199,17 @@ export function exportAuditToPdf(audit: AuditInspection): void {
     }
 
     const poleRows: Array<[string, string, string, string, string, string]> = [];
-    if (pole.problems.length === 0) {
+    if (combinedProblems.length === 0) {
       poleRows.push([pNum, pId, pType, 'Sem não conformidades registradas', '0', poleStatus]);
     } else {
-      pole.problems.forEach((prob, idx) => {
+      combinedProblems.forEach((prob, idx) => {
+        const probTitle =
+          prob.source === 'caixa' ? `[${prob.sourceLabel}] ${prob.problem}` : prob.problem;
         poleRows.push([
           idx === 0 ? pNum : '',
           idx === 0 ? pId : '',
           idx === 0 ? pType : '',
-          prob.note ? `${prob.problem}\nObs: ${prob.note}` : prob.problem,
+          prob.note ? `${probTitle}\nObs: ${prob.note}` : probTitle,
           String(prob.quantity),
           idx === 0 ? poleStatus : '',
         ]);
@@ -598,11 +601,13 @@ export async function exportAuditToExcel(audit: AuditInspection): Promise<void> 
   });
 
   for (const pole of audit.poles) {
+    const combinedProblems = getCombinedPoleProblems(pole);
+    const poleStatus = combinedProblems.length > 0 ? 'Não Conforme' : 'Conforme';
     const items =
-      pole.problems.length === 0
+      combinedProblems.length === 0
         ? [{ problem: 'Sem não conformidades registradas', quantity: 0, note: '—' }]
-        : pole.problems.map((pr) => ({
-            problem: pr.problem,
+        : combinedProblems.map((pr) => ({
+            problem: pr.source === 'caixa' ? `[${pr.sourceLabel}] ${pr.problem}` : pr.problem,
             quantity: pr.quantity,
             note: pr.note || '—',
           }));
@@ -612,7 +617,7 @@ export async function exportAuditToExcel(audit: AuditInspection): Promise<void> 
         `Poste ${formatPoleNumber(pole.number)}`,
         pole.poleId || '—',
         pole.type || '—',
-        pole.status,
+        poleStatus,
         item.problem,
         item.quantity,
         item.note,
@@ -712,17 +717,22 @@ export async function exportAuditToExcel(audit: AuditInspection): Promise<void> 
 
   for (const pole of audit.poles) {
     const photos = pole.photos.slice(0, 4);
+    const combinedProblems = getCombinedPoleProblems(pole);
+    const poleStatus = combinedProblems.length > 0 ? 'Não Conforme' : 'Conforme';
     const itemNotesText =
-      pole.problems.length === 0
+      combinedProblems.length === 0
         ? 'Sem não conformidades registradas'
-        : pole.problems
-            .map((pr) => (pr.note ? `${pr.problem}: ${pr.note}` : pr.problem))
+        : combinedProblems
+            .map((pr) => {
+              const title = pr.source === 'caixa' ? `[${pr.sourceLabel}] ${pr.problem}` : pr.problem;
+              return pr.note ? `${title}: ${pr.note}` : title;
+            })
             .join('\n');
 
     const evRow = wsEvidence.addRow([
       pole.poleId || `Poste ${formatPoleNumber(pole.number)}`,
       pole.type || '—',
-      pole.status,
+      poleStatus,
       itemNotesText,
       photos[0] ? '' : '—',
       photos[1] ? '' : '—',
@@ -857,7 +867,9 @@ export function exportConsolidatedExcel(audits: AuditInspection[]): void {
   ];
   for (const a of audits) {
     for (const pole of a.poles) {
-      if (pole.problems.length === 0) {
+      const combinedProblems = getCombinedPoleProblems(pole);
+      const poleStatus = combinedProblems.length > 0 ? 'Não Conforme' : 'Conforme';
+      if (combinedProblems.length === 0) {
         detailRows.push([
           a.projeto || '—',
           a.bairro || '—',
@@ -866,14 +878,14 @@ export function exportConsolidatedExcel(audits: AuditInspection[]): void {
           `Poste ${formatPoleNumber(pole.number)}`,
           pole.poleId || '—',
           pole.type || '—',
-          pole.status,
+          poleStatus,
           'Conforme / Sem irregularidades',
           0,
           '—',
           pole.photos.length,
         ]);
       } else {
-        for (const prob of pole.problems) {
+        for (const prob of combinedProblems) {
           detailRows.push([
             a.projeto || '—',
             a.bairro || '—',
@@ -882,8 +894,8 @@ export function exportConsolidatedExcel(audits: AuditInspection[]): void {
             `Poste ${formatPoleNumber(pole.number)}`,
             pole.poleId || '—',
             pole.type || '—',
-            pole.status,
-            prob.problem,
+            poleStatus,
+            prob.source === 'caixa' ? `[${prob.sourceLabel}] ${prob.problem}` : prob.problem,
             prob.quantity,
             prob.note || '—',
             pole.photos.length,
@@ -1061,7 +1073,9 @@ export async function exportAuditToWord(audit: AuditInspection): Promise<void> {
   ];
 
   for (const pole of audit.poles) {
-    if (pole.problems.length === 0) {
+    const combinedProblems = getCombinedPoleProblems(pole);
+    const poleStatus = combinedProblems.length > 0 ? 'Não Conforme' : 'Conforme';
+    if (combinedProblems.length === 0) {
       checklistTableRows.push(
         new TableRow({
           children: [
@@ -1070,22 +1084,23 @@ export async function exportAuditToWord(audit: AuditInspection): Promise<void> {
             makeDocxCell(pole.type || '—'),
             makeDocxCell('Sem não conformidades registradas'),
             makeDocxCell('0'),
-            makeDocxCell(pole.status),
+            makeDocxCell(poleStatus),
             makeDocxCell(`${pole.photos.length}/4`),
           ],
         })
       );
     } else {
-      pole.problems.forEach((prob, idx) => {
+      combinedProblems.forEach((prob, idx) => {
+        const title = prob.source === 'caixa' ? `[${prob.sourceLabel}] ${prob.problem}` : prob.problem;
         checklistTableRows.push(
           new TableRow({
             children: [
               makeDocxCell(idx === 0 ? `Poste ${formatPoleNumber(pole.number)}` : '', idx === 0),
               makeDocxCell(idx === 0 ? pole.poleId || '—' : ''),
               makeDocxCell(idx === 0 ? pole.type || '—' : ''),
-              makeDocxCell(prob.note ? `${prob.problem} (${prob.note})` : prob.problem),
+              makeDocxCell(prob.note ? `${title} (${prob.note})` : title),
               makeDocxCell(String(prob.quantity)),
-              makeDocxCell(idx === 0 ? pole.status : ''),
+              makeDocxCell(idx === 0 ? poleStatus : ''),
               makeDocxCell(idx === 0 ? `${pole.photos.length}/4` : ''),
             ],
           })
@@ -1114,12 +1129,14 @@ export async function exportAuditToWord(audit: AuditInspection): Promise<void> {
     );
 
     for (const pole of polesWithPhotos) {
+      const combinedProblems = getCombinedPoleProblems(pole);
+      const poleStatus = combinedProblems.length > 0 ? 'Não Conforme' : 'Conforme';
       children.push(
         new Paragraph({
           spacing: { before: 180, after: 80 },
           children: [
             new TextRun({
-              text: `POSTE ${formatPoleNumber(pole.number)}  •  ID: ${pole.poleId || '—'}  •  Tipo: ${pole.type || '—'}  •  Status: ${pole.status}`,
+              text: `POSTE ${formatPoleNumber(pole.number)}  •  ID: ${pole.poleId || '—'}  •  Tipo: ${pole.type || '—'}  •  Status: ${poleStatus}`,
               bold: true,
               size: 21,
               color: '1E3A8A',
@@ -1129,13 +1146,18 @@ export async function exportAuditToWord(audit: AuditInspection): Promise<void> {
         })
       );
 
-      if (pole.problems.length > 0) {
+      if (combinedProblems.length > 0) {
         children.push(
           new Paragraph({
             spacing: { after: 100 },
             children: [
               new TextRun({
-                text: `Problemas: ${pole.problems.map((pr) => `${pr.problem} (Qtd: ${pr.quantity}${pr.note ? ` - ${pr.note}` : ''})`).join('; ')}`,
+                text: `Problemas: ${combinedProblems
+                  .map((pr) => {
+                    const title = pr.source === 'caixa' ? `[${pr.sourceLabel}] ${pr.problem}` : pr.problem;
+                    return `${title} (Qtd: ${pr.quantity}${pr.note ? ` - ${pr.note}` : ''})`;
+                  })
+                  .join('; ')}`,
                 size: 18,
                 color: '475569',
                 font: 'Calibri',

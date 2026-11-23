@@ -1,5 +1,6 @@
 export const MAX_POLES = 25;
 export const MAX_PHOTOS_PER_POLE = 4;
+export const MAX_SHIELDING_BOXES_PER_POLE = 6;
 
 export const PROBLEM_OPTIONS = [
   '1. RAMAL SEM PRENSA CABO',
@@ -18,6 +19,28 @@ export const PROBLEM_OPTIONS = [
   '14. EMCABECAMENTO DE REDE INCORRETO OU FORA DO PADRÃO',
   '15. ESTRUTURA OU POSTE DANIFICADO',
   '16. RAMAL DE CLIENTE INADEQUADO OU LIGAÇÃO EM RABIXO',
+] as const;
+
+export const SHIELDING_BOX_PROBLEM_OPTIONS = [
+  '1. RAMAL SEM PRENSA CABO',
+  '2. PRENSA CABO INSTALADO INCORRETAMENTE',
+  '5. CAIXAS ALARMANDO',
+  '7. LUMINÁRIA NÃO RELIGADA',
+  '8. RABIXO NÃO DISPONIBILIZADO',
+  '13. CAIXA DE BLINDAGEM ABERTA',
+  '16. RAMAL DE CLIENTE INADEQUADO OU LIGAÇÃO EM RABIXO',
+] as const;
+
+export const POLE_PROBLEM_OPTIONS = [
+  '3. AMARRAÇÃO DE CONCENTRICO PENDENTE',
+  '4. AUSENCIA DE 5S',
+  '6. FERRAMENTA ESQUECIDA EM OBRA',
+  '9. REINSTALAÇÃO DE LUMINÁRIA INCORRETA',
+  '10. ATERRAMENTO FORA DO PADRÃO',
+  '11. AUSENCIA DE BLINDAGEM DO TRAFO',
+  '12. SEALTUBO DANIFICADO OU INCORRETO',
+  '14. EMCABECAMENTO DE REDE INCORRETO OU FORA DO PADRÃO',
+  '15. ESTRUTURA OU POSTE DANIFICADO',
 ] as const;
 
 export type ProblemType = (typeof PROBLEM_OPTIONS)[number];
@@ -62,12 +85,19 @@ export interface PoleProblem {
   note?: string;
 }
 
+export interface ShieldingBoxInspection {
+  id: string;
+  number: number; // 1 to 6
+  problems: PoleProblem[];
+}
+
 export interface PoleInspection {
   number: number; // 1 to 25
   poleId: string;
   type: string;
   status: PoleStatus;
   problems: PoleProblem[];
+  shieldingBoxes?: ShieldingBoxInspection[];
   photos: PhotoEvidence[];
   observation: string;
 }
@@ -99,6 +129,14 @@ export function createId(prefix = 'id'): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
+export function createEmptyShieldingBox(number: number): ShieldingBoxInspection {
+  return {
+    id: createId('caixa'),
+    number,
+    problems: [],
+  };
+}
+
 export function createEmptyPole(number: number): PoleInspection {
   return {
     number,
@@ -106,12 +144,13 @@ export function createEmptyPole(number: number): PoleInspection {
     type: 'DUPLO T',
     status: 'Conforme',
     problems: [],
+    shieldingBoxes: [],
     photos: [],
     observation: '',
   };
 }
 
-export function createEmptyProblem(problem: string = PROBLEM_OPTIONS[0]): PoleProblem {
+export function createEmptyProblem(problem: string = POLE_PROBLEM_OPTIONS[0]): PoleProblem {
   return {
     id: createId('prob'),
     problem,
@@ -149,8 +188,53 @@ export function formatPoleNumber(n: number): string {
   return String(n).padStart(2, '0');
 }
 
-export function derivePoleStatus(problems: PoleProblem[]): PoleStatus {
-  return problems.length > 0 ? 'Não Conforme' : 'Conforme';
+export function derivePoleStatus(
+  problems: PoleProblem[],
+  shieldingBoxes: ShieldingBoxInspection[] = []
+): PoleStatus {
+  const hasBoxProblem = shieldingBoxes.some((box) => box.problems.length > 0);
+  return problems.length > 0 || hasBoxProblem ? 'Não Conforme' : 'Conforme';
+}
+
+export interface CombinedProblemEntry {
+  id: string;
+  source: 'poste' | 'caixa';
+  boxNumber?: number;
+  sourceLabel: string;
+  problem: string;
+  quantity: number;
+  note?: string;
+}
+
+export function getCombinedPoleProblems(
+  pole: Pick<PoleInspection, 'problems' | 'shieldingBoxes'>
+): CombinedProblemEntry[] {
+  const result: CombinedProblemEntry[] = [];
+  for (const pr of pole.problems ?? []) {
+    result.push({
+      id: pr.id,
+      source: 'poste',
+      sourceLabel: 'Poste',
+      problem: pr.problem,
+      quantity: pr.quantity,
+      note: pr.note,
+    });
+  }
+  for (const box of pole.shieldingBoxes ?? []) {
+    const boxLabel = `Caixa ${formatPoleNumber(box.number)}`;
+    for (const pr of box.problems ?? []) {
+      result.push({
+        id: pr.id,
+        source: 'caixa',
+        boxNumber: box.number,
+        sourceLabel: boxLabel,
+        problem: pr.problem,
+        quantity: pr.quantity,
+        note: pr.note,
+      });
+    }
+  }
+  return result;
 }
 
 export function normalizeProblemLabel(raw: string): string {
@@ -163,3 +247,28 @@ export function normalizeProblemLabel(raw: string): string {
   );
   return matched ?? trimmed;
 }
+
+export function normalizePole(pole: PoleInspection): PoleInspection {
+  const normalizedProblems = (pole.problems ?? []).map((pr) => ({
+    ...pr,
+    problem: normalizeProblemLabel(pr.problem),
+  }));
+  const normalizedBoxes = (pole.shieldingBoxes ?? [])
+    .slice(0, MAX_SHIELDING_BOXES_PER_POLE)
+    .map((box, idx) => ({
+      ...box,
+      id: box.id || createId('caixa'),
+      number: idx + 1,
+      problems: (box.problems ?? []).map((pr) => ({
+        ...pr,
+        problem: normalizeProblemLabel(pr.problem),
+      })),
+    }));
+  return {
+    ...pole,
+    problems: normalizedProblems,
+    shieldingBoxes: normalizedBoxes,
+    status: derivePoleStatus(normalizedProblems, normalizedBoxes),
+  };
+}
+

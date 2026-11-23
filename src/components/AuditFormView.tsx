@@ -18,15 +18,19 @@ import {
   AuditInspection,
   MAX_PHOTOS_PER_POLE,
   MAX_POLES,
+  MAX_SHIELDING_BOXES_PER_POLE,
+  POLE_PROBLEM_OPTIONS,
   POLE_TYPE_OPTIONS,
-  PROBLEM_OPTIONS,
   PhotoEvidence,
   PoleInspection,
   PoleProblem,
+  SHIELDING_BOX_PROBLEM_OPTIONS,
   createEmptyPole,
   createEmptyProblem,
+  createEmptyShieldingBox,
   derivePoleStatus,
   formatPoleNumber,
+  getCombinedPoleProblems,
 } from '../types/audit';
 import { compressImageFile } from '../storage/auditDb';
 import { formatMinutesDuration, parseTimeToMinutes } from '../utils/analytics';
@@ -118,14 +122,109 @@ export function AuditFormView({
     setConfirmRemovePoleIdx(null);
   };
 
+  const handleAddShieldingBox = () => {
+    const currentBoxes = activePole.shieldingBoxes ?? [];
+    if (currentBoxes.length >= MAX_SHIELDING_BOXES_PER_POLE) {
+      setFeedbackMsg({
+        type: 'error',
+        text: `Limite máximo atingido: cada poste suporta até ${MAX_SHIELDING_BOXES_PER_POLE} caixas de blindagem.`,
+      });
+      return;
+    }
+    updatePole(safePoleIndex, (pole) => {
+      const boxes = pole.shieldingBoxes ?? [];
+      if (boxes.length >= MAX_SHIELDING_BOXES_PER_POLE) return pole;
+      const nextBoxes = [...boxes, createEmptyShieldingBox(boxes.length + 1)];
+      return {
+        ...pole,
+        shieldingBoxes: nextBoxes,
+        status: derivePoleStatus(pole.problems, nextBoxes),
+      };
+    });
+    setFeedbackMsg(null);
+  };
+
+  const handleRemoveShieldingBox = (boxId: string) => {
+    updatePole(safePoleIndex, (pole) => {
+      const nextBoxes = (pole.shieldingBoxes ?? [])
+        .filter((b) => b.id !== boxId)
+        .map((b, idx) => ({ ...b, number: idx + 1 }));
+      return {
+        ...pole,
+        shieldingBoxes: nextBoxes,
+        status: derivePoleStatus(pole.problems, nextBoxes),
+      };
+    });
+  };
+
+  const handleAddBoxProblem = (boxId: string, chosenProblem?: string) => {
+    updatePole(safePoleIndex, (pole) => {
+      const nextBoxes = (pole.shieldingBoxes ?? []).map((box) => {
+        if (box.id !== boxId) return box;
+        const usedSet = new Set(box.problems.map((p) => p.problem));
+        const nextDefault =
+          chosenProblem ||
+          SHIELDING_BOX_PROBLEM_OPTIONS.find((opt) => !usedSet.has(opt)) ||
+          SHIELDING_BOX_PROBLEM_OPTIONS[0];
+        return {
+          ...box,
+          problems: [...box.problems, createEmptyProblem(nextDefault)],
+        };
+      });
+      return {
+        ...pole,
+        shieldingBoxes: nextBoxes,
+        status: derivePoleStatus(pole.problems, nextBoxes),
+      };
+    });
+  };
+
+  const handleUpdateBoxProblem = (
+    boxId: string,
+    problemId: string,
+    patch: Partial<PoleProblem>
+  ) => {
+    updatePole(safePoleIndex, (pole) => {
+      const nextBoxes = (pole.shieldingBoxes ?? []).map((box) => {
+        if (box.id !== boxId) return box;
+        return {
+          ...box,
+          problems: box.problems.map((pr) => (pr.id === problemId ? { ...pr, ...patch } : pr)),
+        };
+      });
+      return {
+        ...pole,
+        shieldingBoxes: nextBoxes,
+        status: derivePoleStatus(pole.problems, nextBoxes),
+      };
+    });
+  };
+
+  const handleRemoveBoxProblem = (boxId: string, problemId: string) => {
+    updatePole(safePoleIndex, (pole) => {
+      const nextBoxes = (pole.shieldingBoxes ?? []).map((box) => {
+        if (box.id !== boxId) return box;
+        return {
+          ...box,
+          problems: box.problems.filter((pr) => pr.id !== problemId),
+        };
+      });
+      return {
+        ...pole,
+        shieldingBoxes: nextBoxes,
+        status: derivePoleStatus(pole.problems, nextBoxes),
+      };
+    });
+  };
+
   const handleAddProblemRow = () => {
     updatePole(safePoleIndex, (pole) => {
       const usedSet = new Set(pole.problems.map((p) => p.problem));
-      const nextDefault = PROBLEM_OPTIONS.find((opt) => !usedSet.has(opt)) ?? PROBLEM_OPTIONS[0];
+      const nextDefault = POLE_PROBLEM_OPTIONS.find((opt) => !usedSet.has(opt)) ?? POLE_PROBLEM_OPTIONS[0];
       const nextProblems = [...pole.problems, createEmptyProblem(nextDefault)];
       return {
         ...pole,
-        status: derivePoleStatus(nextProblems),
+        status: derivePoleStatus(nextProblems, pole.shieldingBoxes ?? []),
         problems: nextProblems,
       };
     });
@@ -144,7 +243,7 @@ export function AuditFormView({
       const nextProblems = [...pole.problems, ...additions];
       return {
         ...pole,
-        status: derivePoleStatus(nextProblems),
+        status: derivePoleStatus(nextProblems, pole.shieldingBoxes ?? []),
         problems: nextProblems,
       };
     });
@@ -157,7 +256,7 @@ export function AuditFormView({
       const nextProblems = pole.problems.map((pr) => (pr.id === problemId ? { ...pr, ...patch } : pr));
       return {
         ...pole,
-        status: derivePoleStatus(nextProblems),
+        status: derivePoleStatus(nextProblems, pole.shieldingBoxes ?? []),
         problems: nextProblems,
       };
     });
@@ -168,7 +267,7 @@ export function AuditFormView({
       const nextProblems = pole.problems.filter((pr) => pr.id !== problemId);
       return {
         ...pole,
-        status: derivePoleStatus(nextProblems),
+        status: derivePoleStatus(nextProblems, pole.shieldingBoxes ?? []),
         problems: nextProblems,
       };
     });
@@ -259,8 +358,11 @@ export function AuditFormView({
   const vistoriaDuration =
     startMin !== null && endMin !== null && endMin >= startMin ? formatMinutesDuration(endMin - startMin) : '—';
 
-  const totalProblemsCount = audit.poles.reduce((acc, p) => acc + p.problems.length, 0);
+  const totalProblemsCount = audit.poles.reduce((acc, p) => acc + getCombinedPoleProblems(p).length, 0);
   const totalPhotosCount = audit.poles.reduce((acc, p) => acc + p.photos.length, 0);
+  const activeBoxes = activePole.shieldingBoxes ?? [];
+  const activeCombinedProblems = getCombinedPoleProblems(activePole);
+  const activeDerivedStatus = derivePoleStatus(activePole.problems, activeBoxes);
 
   return (
     <div className="space-y-6">
@@ -576,15 +678,26 @@ export function AuditFormView({
               Adicione até {MAX_POLES} postes por inspeção, com múltiplos problemas e até {MAX_PHOTOS_PER_POLE} fotos de evidência em cada poste.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={handleAddPole}
-            disabled={audit.poles.length >= MAX_POLES}
-            className="inline-flex h-10 items-center gap-2 rounded-md bg-blue-700 px-4 text-xs font-semibold text-white transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300 whitespace-nowrap shrink-0"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Adicionar Poste ({audit.poles.length}/{MAX_POLES})</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleAddShieldingBox}
+              disabled={activeBoxes.length >= MAX_SHIELDING_BOXES_PER_POLE}
+              className="inline-flex h-10 items-center gap-2 rounded-md border border-blue-700 bg-white px-4 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 whitespace-nowrap shrink-0"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Adicionar Caixa de Blindagem ({activeBoxes.length}/{MAX_SHIELDING_BOXES_PER_POLE})</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleAddPole}
+              disabled={audit.poles.length >= MAX_POLES}
+              className="inline-flex h-10 items-center gap-2 rounded-md bg-blue-700 px-4 text-xs font-semibold text-white transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300 whitespace-nowrap shrink-0"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Adicionar Poste ({audit.poles.length}/{MAX_POLES})</span>
+            </button>
+          </div>
         </div>
 
         {/* Pole Selector Tabs (01 to 25) */}
@@ -592,7 +705,7 @@ export function AuditFormView({
           <div className="flex flex-wrap gap-2">
             {audit.poles.map((pole, idx) => {
               const isActive = idx === safePoleIndex;
-              const derivedStatus = derivePoleStatus(pole.problems);
+              const derivedStatus = derivePoleStatus(pole.problems, pole.shieldingBoxes ?? []);
               const isConforming = derivedStatus === 'Conforme';
               const trimmedId = pole.poleId.trim();
               const formattedId = trimmedId
@@ -636,7 +749,7 @@ export function AuditFormView({
                 Poste {formatPoleNumber(activePole.number)}
               </h3>
               <span className="text-slate-300" aria-hidden="true">|</span>
-              <StatusText status={activePole.status} />
+              <StatusText status={activeDerivedStatus} />
               {activePole.poleId && (
                 <>
                   <span className="text-slate-300" aria-hidden="true">·</span>
@@ -715,15 +828,253 @@ export function AuditFormView({
                 aria-live="polite"
                 className="flex h-10 w-full items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-3"
               >
-                <StatusText status={derivePoleStatus(activePole.problems)} />
+                <StatusText status={activeDerivedStatus} />
                 <span className="text-[11px] text-slate-500">
-                  {activePole.problems.length === 0 ? 'Sem problemas' : `${activePole.problems.length} problema(s)`}
+                  {activeCombinedProblems.length === 0 ? 'Sem problemas' : `${activeCombinedProblems.length} problema(s)`}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Checklist of Problems for this Pole */}
+          {/* Caixas de Blindagem de Rede for this Pole (up to 6) */}
+          <div className="space-y-3 border-t border-slate-100 pt-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h4 className="text-sm font-semibold text-slate-900">
+                  Caixas de Blindagem de Rede — Poste {formatPoleNumber(activePole.number)}
+                </h4>
+                <p className="text-xs text-slate-500">
+                  Adicione até {MAX_SHIELDING_BOXES_PER_POLE} caixas de blindagem neste poste e informe os problemas com quantitativos por caixa.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleAddShieldingBox}
+                disabled={activeBoxes.length >= MAX_SHIELDING_BOXES_PER_POLE}
+                className="inline-flex h-9 items-center gap-1.5 rounded-md bg-blue-700 px-3 text-xs font-semibold text-white transition-colors hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300 whitespace-nowrap"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Adicionar Caixa de Blindagem ({activeBoxes.length}/{MAX_SHIELDING_BOXES_PER_POLE})</span>
+              </button>
+            </div>
+
+            {activeBoxes.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center">
+                <p className="text-sm font-medium text-slate-700">
+                  Nenhuma caixa de blindagem adicionada ao Poste {formatPoleNumber(activePole.number)}.
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Clique em &ldquo;Adicionar Caixa de Blindagem&rdquo; para dividir os problemas do poste entre até {MAX_SHIELDING_BOXES_PER_POLE} caixas.
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-200 rounded-lg border border-slate-200">
+                {activeBoxes.map((box) => (
+                  <div key={box.id} className="bg-white">
+                    {box.problems.length === 0 ? (
+                      <div className="grid grid-cols-1 gap-3 p-3.5 lg:grid-cols-12 lg:items-end">
+                        <div className="lg:col-span-3">
+                          <span className="block font-mono text-xs font-bold text-slate-900">
+                            Caixa de Blindagem {formatPoleNumber(box.number)}
+                          </span>
+                          <span className="mt-0.5 block text-[11px] text-slate-500">
+                            Sem não conformidades
+                          </span>
+                        </div>
+
+                        <div className="lg:col-span-6">
+                          <label className="block">
+                            <span className="mb-1 block text-[11px] font-semibold text-slate-500">
+                              PROBLEMAS DA CAIXA DE BLINDAGEM
+                            </span>
+                            <select
+                              value=""
+                              onChange={(e) => {
+                                if (e.target.value) {
+                                  handleAddBoxProblem(box.id, e.target.value);
+                                }
+                              }}
+                              className="h-10 w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-900 focus:border-blue-600 focus:outline-none"
+                            >
+                              <option value="">Selecione um problema para adicionar...</option>
+                              {SHIELDING_BOX_PROBLEM_OPTIONS.map((opt) => (
+                                <option key={opt} value={opt}>
+                                  {opt}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+
+                        <div className="lg:col-span-2">
+                          <button
+                            type="button"
+                            onClick={() => handleAddBoxProblem(box.id)}
+                            className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-md bg-slate-900 px-3 text-xs font-semibold text-white hover:bg-slate-800 whitespace-nowrap"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            <span>Adicionar Problema</span>
+                          </button>
+                        </div>
+
+                        <div className="flex justify-end lg:col-span-1">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveShieldingBox(box.id)}
+                            title={`Remover Caixa de Blindagem ${formatPoleNumber(box.number)}`}
+                            className="flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 text-slate-500 transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-3.5 py-2.5">
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="font-mono font-bold text-slate-900">
+                              Caixa de Blindagem {formatPoleNumber(box.number)}
+                            </span>
+                            <span aria-hidden="true" className="text-slate-300">·</span>
+                            <span className="font-mono text-slate-600 tabular-nums">
+                              {box.problems.length} problema(s)
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleAddBoxProblem(box.id)}
+                              className="inline-flex h-8 items-center gap-1 rounded-md bg-slate-900 px-2.5 text-xs font-semibold text-white hover:bg-slate-800 whitespace-nowrap"
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                              <span>Adicionar Problema</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveShieldingBox(box.id)}
+                              title={`Remover Caixa de Blindagem ${formatPoleNumber(box.number)}`}
+                              className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-600 transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-700"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              <span>Remover Caixa</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="divide-y divide-slate-100">
+                          {box.problems.map((prob, pIdx) => {
+                            const boxOptions = (SHIELDING_BOX_PROBLEM_OPTIONS as readonly string[]).includes(prob.problem)
+                              ? SHIELDING_BOX_PROBLEM_OPTIONS
+                              : [prob.problem, ...SHIELDING_BOX_PROBLEM_OPTIONS];
+                            return (
+                              <div
+                                key={prob.id}
+                                className="grid grid-cols-1 gap-3 p-3.5 lg:grid-cols-12 lg:items-end"
+                              >
+                                <div className="lg:col-span-6">
+                                  <label className="block">
+                                    <span className="mb-1 block font-mono text-[11px] font-semibold text-slate-500">
+                                      CAIXA {formatPoleNumber(box.number)} — PROBLEMA #{String(pIdx + 1).padStart(2, '0')}
+                                    </span>
+                                    <select
+                                      value={prob.problem}
+                                      onChange={(e) =>
+                                        handleUpdateBoxProblem(box.id, prob.id, { problem: e.target.value })
+                                      }
+                                      className="h-10 w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-900 focus:border-blue-600 focus:outline-none"
+                                    >
+                                      {boxOptions.map((opt) => (
+                                        <option key={opt} value={opt}>
+                                          {opt}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                </div>
+
+                                <div className="lg:col-span-2">
+                                  <span className="mb-1 block text-[11px] font-semibold text-slate-500">
+                                    QUANTIDADE
+                                  </span>
+                                  <div className="flex h-10 items-center overflow-hidden rounded-md border border-slate-300">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleUpdateBoxProblem(box.id, prob.id, {
+                                          quantity: Math.max(1, prob.quantity - 1),
+                                        })
+                                      }
+                                      className="flex h-full w-9 items-center justify-center bg-slate-50 text-sm font-bold text-slate-700 hover:bg-slate-100"
+                                      aria-label="Diminuir quantidade"
+                                    >
+                                      −
+                                    </button>
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      value={prob.quantity}
+                                      onChange={(e) =>
+                                        handleUpdateBoxProblem(box.id, prob.id, {
+                                          quantity: Math.max(1, Number(e.target.value) || 1),
+                                        })
+                                      }
+                                      className="h-full w-full border-x border-slate-200 bg-white text-center font-mono text-sm font-semibold text-slate-900 tabular-nums focus:outline-none"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleUpdateBoxProblem(box.id, prob.id, {
+                                          quantity: prob.quantity + 1,
+                                        })
+                                      }
+                                      className="flex h-full w-9 items-center justify-center bg-slate-50 text-sm font-bold text-slate-700 hover:bg-slate-100"
+                                      aria-label="Aumentar quantidade"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <div className="lg:col-span-3">
+                                  <label className="block">
+                                    <span className="mb-1 block text-[11px] font-semibold text-slate-500">
+                                      DETALHE (OPCIONAL)
+                                    </span>
+                                    <input
+                                      type="text"
+                                      value={prob.note ?? ''}
+                                      onChange={(e) =>
+                                        handleUpdateBoxProblem(box.id, prob.id, { note: e.target.value })
+                                      }
+                                      placeholder="Ex: instalado de forma incorreta"
+                                      className="h-10 w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
+                                    />
+                                  </label>
+                                </div>
+
+                                <div className="flex justify-end lg:col-span-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveBoxProblem(box.id, prob.id)}
+                                    title="Remover problema da caixa"
+                                    className="flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 text-slate-500 transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-700"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Checklist of Problems for this Pole (Pole-only items) */}
           <div className="space-y-3 border-t border-slate-100 pt-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -731,7 +1082,7 @@ export function AuditFormView({
                   Checklist de Problemas do Poste {formatPoleNumber(activePole.number)}
                 </h4>
                 <p className="text-xs text-slate-500">
-                  Informe um ou mais problemas encontrados neste poste com quantidade e detalhe opcional.
+                  Informe apenas os problemas específicos de poste com quantidade e detalhe opcional.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -762,7 +1113,7 @@ export function AuditFormView({
               <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-4">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs font-semibold text-slate-800">
-                    Selecione os problemas identificados neste poste para adicionar de uma vez:
+                    Selecione os problemas de poste identificados para adicionar de uma vez:
                   </p>
                   <button
                     type="button"
@@ -774,7 +1125,7 @@ export function AuditFormView({
                   </button>
                 </div>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {PROBLEM_OPTIONS.map((opt) => {
+                  {POLE_PROBLEM_OPTIONS.map((opt) => {
                     const alreadyAdded = activePole.problems.some((p) => p.problem === opt);
                     const checked = selectedBatchProblems.includes(opt);
                     return (
@@ -813,7 +1164,7 @@ export function AuditFormView({
             {activePole.problems.length === 0 ? (
               <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center">
                 <p className="text-sm font-medium text-slate-700">
-                  Nenhum problema registrado para o Poste {formatPoleNumber(activePole.number)}.
+                  Nenhum problema de poste registrado para o Poste {formatPoleNumber(activePole.number)}.
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
                   Caso o poste esteja conforme o padrão, mantenha sem problemas ou adicione uma não conformidade acima.
@@ -821,7 +1172,11 @@ export function AuditFormView({
               </div>
             ) : (
               <div className="divide-y divide-slate-200 rounded-lg border border-slate-200">
-                {activePole.problems.map((prob, pIdx) => (
+                {activePole.problems.map((prob, pIdx) => {
+                  const rowOptions = (POLE_PROBLEM_OPTIONS as readonly string[]).includes(prob.problem)
+                    ? POLE_PROBLEM_OPTIONS
+                    : [prob.problem, ...POLE_PROBLEM_OPTIONS];
+                  return (
                   <div
                     key={prob.id}
                     className="grid grid-cols-1 gap-3 bg-white p-3.5 lg:grid-cols-12 lg:items-end"
@@ -836,7 +1191,7 @@ export function AuditFormView({
                           onChange={(e) => handleUpdateProblem(prob.id, { problem: e.target.value })}
                           className="h-10 w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-900 focus:border-blue-600 focus:outline-none"
                         >
-                          {PROBLEM_OPTIONS.map((opt) => (
+                          {rowOptions.map((opt) => (
                             <option key={opt} value={opt}>
                               {opt}
                             </option>
@@ -912,7 +1267,8 @@ export function AuditFormView({
                       </button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1094,7 +1450,9 @@ export function AuditFormView({
             </thead>
             <tbody className="divide-y divide-slate-200">
               {audit.poles.map((pole, idx) => {
-                const totalQty = pole.problems.reduce((sum, p) => sum + p.quantity, 0);
+                const combinedProblems = getCombinedPoleProblems(pole);
+                const totalQty = combinedProblems.reduce((sum, p) => sum + p.quantity, 0);
+                const poleStatus = derivePoleStatus(pole.problems, pole.shieldingBoxes ?? []);
                 const isSelected = idx === safePoleIndex;
                 return (
                   <tr
@@ -1114,9 +1472,15 @@ export function AuditFormView({
                       {pole.type || '—'}
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-700">
-                      {pole.problems.length === 0
+                      {combinedProblems.length === 0
                         ? 'Sem não conformidades'
-                        : pole.problems.map((pr) => `${pr.problem} (${pr.quantity})`).join(' · ')}
+                        : combinedProblems
+                            .map((pr) =>
+                              pr.source === 'caixa'
+                                ? `[${pr.sourceLabel}] ${pr.problem} (${pr.quantity})`
+                                : `${pr.problem} (${pr.quantity})`
+                            )
+                            .join(' · ')}
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-slate-900 tabular-nums">
                       {totalQty}
@@ -1125,7 +1489,7 @@ export function AuditFormView({
                       {pole.photos.length}/{MAX_PHOTOS_PER_POLE}
                     </td>
                     <td className="px-4 py-3">
-                      <StatusText status={pole.status} />
+                      <StatusText status={poleStatus} />
                     </td>
                   </tr>
                 );
