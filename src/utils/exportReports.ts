@@ -18,7 +18,13 @@ import {
   TextRun,
   WidthType,
 } from 'docx';
-import { AuditInspection, formatPoleNumber, getCombinedPoleProblems } from '../types/audit';
+import {
+  AuditInspection,
+  PROBLEM_OPTIONS,
+  formatPoleNumber,
+  getCombinedPoleProblems,
+  normalizeProblemLabel,
+} from '../types/audit';
 import { computeAnalytics, formatMinutesDuration, parseTimeToMinutes } from './analytics';
 
 function sanitizeFileName(raw: string): string {
@@ -436,38 +442,96 @@ export function exportAuditToPdf(audit: AuditInspection): void {
     }
   }
 
-  // Final Problem Summary Table (Total Geral por Problema)
-  if (currentY > pageHeight - 46) {
+  // Final Audit Summary Note Table (RESUMO GERAL DA AUDITORIA)
+  if (currentY > pageHeight - 60) {
     doc.addPage();
     currentY = 16;
   } else {
-    currentY += 4;
+    currentY += 5;
   }
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
-  doc.setTextColor(15, 23, 42);
-  doc.text('RESUMO GERAL DE PROBLEMAS', margin, currentY);
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text('RESUMO GERAL DA AUDITORIA', margin, currentY);
 
-  const activeProblemStats = summary.problemStats.filter((st) => st.totalQuantity > 0);
-  const summaryTableBody: Array<[string, string]> =
-    activeProblemStats.length > 0
-      ? activeProblemStats.map((st) => [st.problem, String(st.totalQuantity)])
-      : [['Nenhuma não conformidade apontada nesta auditoria', '0']];
+  const safeQty = (q: number) => (Number.isFinite(q) && q > 0 ? q : 1);
+
+  const totalPolesCount = audit.poles.length;
+  const conformingPolesCount = audit.poles.filter(
+    (p) => getCombinedPoleProblems(p).length === 0
+  ).length;
+  const nonConformingPolesCount = totalPolesCount - conformingPolesCount;
+
+  const allBoxes = audit.poles.flatMap((p) => p.shieldingBoxes ?? []);
+  const totalBoxesCount = allBoxes.length;
+  const conformingBoxesCount = allBoxes.filter((b) => (b.problems ?? []).length === 0).length;
+  const nonConformingBoxesCount = totalBoxesCount - conformingBoxesCount;
+
+  const perTypeQty = new Map<string, number>();
+  for (const opt of PROBLEM_OPTIONS) {
+    perTypeQty.set(opt, 0);
+  }
+
+  let boxProblemsQty = 0;
+  let poleProblemsQty = 0;
+
+  for (const pole of audit.poles) {
+    for (const pr of pole.problems ?? []) {
+      const q = safeQty(pr.quantity);
+      poleProblemsQty += q;
+      const key = normalizeProblemLabel(pr.problem);
+      perTypeQty.set(key, (perTypeQty.get(key) ?? 0) + q);
+    }
+    for (const box of pole.shieldingBoxes ?? []) {
+      for (const pr of box.problems ?? []) {
+        const q = safeQty(pr.quantity);
+        boxProblemsQty += q;
+        const key = normalizeProblemLabel(pr.problem);
+        perTypeQty.set(key, (perTypeQty.get(key) ?? 0) + q);
+      }
+    }
+  }
+
+  const totalProblemsQty = boxProblemsQty + poleProblemsQty;
+
+  const auditSummaryBody: Array<[string, string]> = [
+    ['Total de postes', String(totalPolesCount)],
+    ['Total de postes conformes', String(conformingPolesCount)],
+    ['Total de postes não conformes', String(nonConformingPolesCount)],
+    ['Quantidade de caixas de blindagem totais', String(totalBoxesCount)],
+    ['Quantidade de caixas de blindagem conformes', String(conformingBoxesCount)],
+    ['Quantidade de caixas de blindagem não conformes', String(nonConformingBoxesCount)],
+    ['Quantidade de problemas totais', String(totalProblemsQty)],
+    ['Quantidade de problemas em caixas de blindagem', String(boxProblemsQty)],
+    ['Quantidade de problemas em poste', String(poleProblemsQty)],
+    ['Quantidade de problemas por tipo (1.1 a 2.9)', ''],
+    ...PROBLEM_OPTIONS.map((opt): [string, string] => [opt, String(perTypeQty.get(opt) ?? 0)]),
+  ];
 
   autoTable(doc, {
-    startY: currentY + 3,
+    startY: currentY + 2.5,
     margin: { left: margin, right: margin },
     theme: 'grid',
-    styles: { fontSize: 8.5, cellPadding: 2.5, textColor: [15, 23, 42], lineColor: [226, 232, 240], valign: 'middle' },
-    headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
-    footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold' },
-    head: [['Problema', 'Quantidade Total']],
-    body: summaryTableBody,
-    foot: [['TOTAL GERAL', String(summary.totalProblemQuantity)]],
+    styles: {
+      fontSize: 7.2,
+      cellPadding: 1.3,
+      textColor: [71, 85, 105],
+      lineColor: [226, 232, 240],
+      lineWidth: 0.15,
+      valign: 'middle',
+    },
+    body: auditSummaryBody,
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.row.index === 9) {
+        data.cell.styles.fillColor = [248, 250, 252];
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.textColor = [51, 65, 85];
+      }
+    },
     columnStyles: {
       0: { cellWidth: 'auto' },
-      1: { cellWidth: 38, halign: 'center', fontStyle: 'bold' },
+      1: { cellWidth: 24, halign: 'right' },
     },
   });
 
