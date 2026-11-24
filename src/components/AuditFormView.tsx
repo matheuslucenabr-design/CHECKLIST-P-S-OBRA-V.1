@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import {
+  AlertTriangle,
   Camera,
   Check,
   Clock,
@@ -209,6 +210,19 @@ export function AuditFormView({
           problems: box.problems.filter((pr) => pr.id !== problemId),
         };
       });
+      return {
+        ...pole,
+        shieldingBoxes: nextBoxes,
+        status: derivePoleStatus(pole.problems, nextBoxes),
+      };
+    });
+  };
+
+  const handleMarkBoxConforming = (boxId: string) => {
+    updatePole(safePoleIndex, (pole) => {
+      const nextBoxes = (pole.shieldingBoxes ?? []).map((box) =>
+        box.id === boxId ? { ...box, problems: [] } : box
+      );
       return {
         ...pole,
         shieldingBoxes: nextBoxes,
@@ -868,24 +882,85 @@ export function AuditFormView({
                 </p>
               </div>
             ) : (
-              <div className="divide-y divide-slate-200 rounded-lg border border-slate-200">
-                {activeBoxes.map((box) => (
-                  <div key={box.id} className="bg-white">
-                    {box.problems.length === 0 ? (
-                      <div className="grid grid-cols-1 gap-3 p-3.5 lg:grid-cols-12 lg:items-end">
-                        <div className="lg:col-span-3">
-                          <span className="block font-mono text-xs font-bold text-slate-900">
-                            Caixa de Blindagem {formatPoleNumber(box.number)}
-                          </span>
-                          <span className="mt-0.5 block text-[11px] text-slate-500">
-                            Sem não conformidades
-                          </span>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {activeBoxes.map((box) => {
+                  const isBoxConforming = box.problems.length === 0;
+                  return (
+                    <div
+                      key={box.id}
+                      className={`flex flex-col justify-between rounded-xl border bg-white p-4 transition-colors ${
+                        isBoxConforming ? 'border-emerald-300' : 'border-red-300'
+                      }`}
+                    >
+                      <div className="space-y-3">
+                        {/* Box Header */}
+                        <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
+                          <div>
+                            <h5 className="font-mono text-xs font-bold tracking-wide text-slate-900">
+                              CAIXA DE BLINDAGEM {formatPoleNumber(box.number)}
+                            </h5>
+                            <p
+                              className={`mt-0.5 text-[11px] font-semibold ${
+                                isBoxConforming ? 'text-emerald-700' : 'text-red-700'
+                              }`}
+                            >
+                              {isBoxConforming
+                                ? 'Caixa de Blindagem Conforme'
+                                : `${box.problems.length} problema(s) registrado(s)`}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveShieldingBox(box.id)}
+                            title={`Remover Caixa de Blindagem ${formatPoleNumber(box.number)}`}
+                            aria-label={`Remover Caixa de Blindagem ${formatPoleNumber(box.number)}`}
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-700"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
                         </div>
 
-                        <div className="lg:col-span-6">
+                        {/* Box Status Bar (Immediate Conforme / Não Conforme) */}
+                        <div
+                          aria-live="polite"
+                          className={`flex min-h-[38px] w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                            isBoxConforming
+                              ? 'border-emerald-600 bg-emerald-50 text-emerald-800'
+                              : 'border-red-600 bg-red-50 text-red-800'
+                          }`}
+                        >
+                          {isBoxConforming ? (
+                            <>
+                              <Check className="h-3.5 w-3.5 shrink-0" />
+                              <span>CAIXA DE BLINDAGEM CONFORME</span>
+                            </>
+                          ) : (
+                            <>
+                              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                              <span>CAIXA DE BLINDAGEM NÃO CONFORME</span>
+                            </>
+                          )}
+                        </div>
+
+                        {!isBoxConforming && (
+                          <div className="flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => handleMarkBoxConforming(box.id)}
+                              className="text-[11px] font-semibold text-slate-600 underline hover:text-emerald-700"
+                            >
+                              Limpar problemas e marcar como conforme
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Problem Selector to Add Problem */}
+                        <div>
                           <label className="block">
-                            <span className="mb-1 block text-[11px] font-semibold text-slate-500">
-                              PROBLEMAS DA CAIXA DE BLINDAGEM
+                            <span className="mb-1 block text-[11px] font-semibold text-slate-600">
+                              {isBoxConforming
+                                ? 'Ou selecione um problema na caixa:'
+                                : 'Adicionar outro problema na caixa:'}
                             </span>
                             <select
                               value=""
@@ -896,7 +971,7 @@ export function AuditFormView({
                               }}
                               className="h-10 w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-900 focus:border-blue-600 focus:outline-none"
                             >
-                              <option value="">Selecione um problema para adicionar...</option>
+                              <option value="">Selecionar problema...</option>
                               {SHIELDING_BOX_PROBLEM_OPTIONS.map((opt) => (
                                 <option key={opt} value={opt}>
                                   {opt}
@@ -906,170 +981,116 @@ export function AuditFormView({
                           </label>
                         </div>
 
-                        <div className="lg:col-span-2">
-                          <button
-                            type="button"
-                            onClick={() => handleAddBoxProblem(box.id)}
-                            className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-md bg-slate-900 px-3 text-xs font-semibold text-white hover:bg-slate-800 whitespace-nowrap"
-                          >
-                            <Plus className="h-3.5 w-3.5" />
-                            <span>Adicionar Problema</span>
-                          </button>
-                        </div>
-
-                        <div className="flex justify-end lg:col-span-1">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveShieldingBox(box.id)}
-                            title={`Remover Caixa de Blindagem ${formatPoleNumber(box.number)}`}
-                            className="flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 text-slate-500 transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-700"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div>
-                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-3.5 py-2.5">
-                          <div className="flex items-center gap-2 text-xs">
-                            <span className="font-mono font-bold text-slate-900">
-                              Caixa de Blindagem {formatPoleNumber(box.number)}
-                            </span>
-                            <span aria-hidden="true" className="text-slate-300">·</span>
-                            <span className="font-mono text-slate-600 tabular-nums">
-                              {box.problems.length} problema(s)
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleAddBoxProblem(box.id)}
-                              className="inline-flex h-8 items-center gap-1 rounded-md bg-slate-900 px-2.5 text-xs font-semibold text-white hover:bg-slate-800 whitespace-nowrap"
-                            >
-                              <Plus className="h-3.5 w-3.5" />
-                              <span>Adicionar Problema</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveShieldingBox(box.id)}
-                              title={`Remover Caixa de Blindagem ${formatPoleNumber(box.number)}`}
-                              className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-600 transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-700"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                              <span>Remover Caixa</span>
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="divide-y divide-slate-100">
-                          {box.problems.map((prob, pIdx) => {
-                            const boxOptions = (SHIELDING_BOX_PROBLEM_OPTIONS as readonly string[]).includes(prob.problem)
-                              ? SHIELDING_BOX_PROBLEM_OPTIONS
-                              : [prob.problem, ...SHIELDING_BOX_PROBLEM_OPTIONS];
-                            return (
-                              <div
-                                key={prob.id}
-                                className="grid grid-cols-1 gap-3 p-3.5 lg:grid-cols-12 lg:items-end"
-                              >
-                                <div className="lg:col-span-6">
-                                  <label className="block">
-                                    <span className="mb-1 block font-mono text-[11px] font-semibold text-slate-500">
-                                      CAIXA {formatPoleNumber(box.number)} — PROBLEMA #{String(pIdx + 1).padStart(2, '0')}
+                        {/* Registered Problems inside this Box */}
+                        {box.problems.length > 0 && (
+                          <div className="divide-y divide-slate-200 border-t border-slate-200 pt-1">
+                            {box.problems.map((prob, pIdx) => {
+                              const boxOptions = (SHIELDING_BOX_PROBLEM_OPTIONS as readonly string[]).includes(
+                                prob.problem
+                              )
+                                ? SHIELDING_BOX_PROBLEM_OPTIONS
+                                : [prob.problem, ...SHIELDING_BOX_PROBLEM_OPTIONS];
+                              return (
+                                <div key={prob.id} className="space-y-2 py-2.5 last:pb-0">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="font-mono text-[10px] font-semibold text-slate-500">
+                                      PROBLEMA #{String(pIdx + 1).padStart(2, '0')}
                                     </span>
-                                    <select
-                                      value={prob.problem}
-                                      onChange={(e) =>
-                                        handleUpdateBoxProblem(box.id, prob.id, { problem: e.target.value })
-                                      }
-                                      className="h-10 w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-900 focus:border-blue-600 focus:outline-none"
-                                    >
-                                      {boxOptions.map((opt) => (
-                                        <option key={opt} value={opt}>
-                                          {opt}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </label>
-                                </div>
-
-                                <div className="lg:col-span-2">
-                                  <span className="mb-1 block text-[11px] font-semibold text-slate-500">
-                                    QUANTIDADE
-                                  </span>
-                                  <div className="flex h-10 items-center overflow-hidden rounded-md border border-slate-300">
                                     <button
                                       type="button"
-                                      onClick={() =>
-                                        handleUpdateBoxProblem(box.id, prob.id, {
-                                          quantity: Math.max(1, prob.quantity - 1),
-                                        })
-                                      }
-                                      className="flex h-full w-9 items-center justify-center bg-slate-50 text-sm font-bold text-slate-700 hover:bg-slate-100"
-                                      aria-label="Diminuir quantidade"
+                                      onClick={() => handleRemoveBoxProblem(box.id, prob.id)}
+                                      title="Remover problema da caixa"
+                                      aria-label="Remover problema da caixa"
+                                      className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-white text-slate-500 transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-700"
                                     >
-                                      −
-                                    </button>
-                                    <input
-                                      type="number"
-                                      min={1}
-                                      value={prob.quantity}
-                                      onChange={(e) =>
-                                        handleUpdateBoxProblem(box.id, prob.id, {
-                                          quantity: Math.max(1, Number(e.target.value) || 1),
-                                        })
-                                      }
-                                      className="h-full w-full border-x border-slate-200 bg-white text-center font-mono text-sm font-semibold text-slate-900 tabular-nums focus:outline-none"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        handleUpdateBoxProblem(box.id, prob.id, {
-                                          quantity: prob.quantity + 1,
-                                        })
-                                      }
-                                      className="flex h-full w-9 items-center justify-center bg-slate-50 text-sm font-bold text-slate-700 hover:bg-slate-100"
-                                      aria-label="Aumentar quantidade"
-                                    >
-                                      +
+                                      <Trash2 className="h-3.5 w-3.5" />
                                     </button>
                                   </div>
-                                </div>
 
-                                <div className="lg:col-span-3">
-                                  <label className="block">
-                                    <span className="mb-1 block text-[11px] font-semibold text-slate-500">
-                                      DETALHE (OPCIONAL)
-                                    </span>
-                                    <input
-                                      type="text"
-                                      value={prob.note ?? ''}
-                                      onChange={(e) =>
-                                        handleUpdateBoxProblem(box.id, prob.id, { note: e.target.value })
-                                      }
-                                      placeholder="Ex: instalado de forma incorreta"
-                                      className="h-10 w-full rounded-md border border-slate-300 bg-white px-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
-                                    />
-                                  </label>
-                                </div>
-
-                                <div className="flex justify-end lg:col-span-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemoveBoxProblem(box.id, prob.id)}
-                                    title="Remover problema da caixa"
-                                    className="flex h-10 w-10 items-center justify-center rounded-md border border-slate-300 text-slate-500 transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-700"
+                                  <select
+                                    value={prob.problem}
+                                    onChange={(e) =>
+                                      handleUpdateBoxProblem(box.id, prob.id, { problem: e.target.value })
+                                    }
+                                    className="h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-xs font-medium text-slate-900 focus:border-blue-600 focus:outline-none"
                                   >
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
+                                    {boxOptions.map((opt) => (
+                                      <option key={opt} value={opt}>
+                                        {opt}
+                                      </option>
+                                    ))}
+                                  </select>
+
+                                  <div className="grid grid-cols-12 gap-2">
+                                    <div className="col-span-5">
+                                      <span className="mb-1 block text-[10px] font-semibold text-slate-500">
+                                        QTD
+                                      </span>
+                                      <div className="flex h-9 items-center overflow-hidden rounded-md border border-slate-300 bg-white">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleUpdateBoxProblem(box.id, prob.id, {
+                                              quantity: Math.max(1, prob.quantity - 1),
+                                            })
+                                          }
+                                          className="flex h-full w-7 items-center justify-center bg-slate-50 text-xs font-bold text-slate-700 hover:bg-slate-100"
+                                          aria-label="Diminuir quantidade"
+                                        >
+                                          −
+                                        </button>
+                                        <input
+                                          type="number"
+                                          min={1}
+                                          value={prob.quantity}
+                                          onChange={(e) =>
+                                            handleUpdateBoxProblem(box.id, prob.id, {
+                                              quantity: Math.max(1, Number(e.target.value) || 1),
+                                            })
+                                          }
+                                          className="h-full w-full border-x border-slate-200 bg-white text-center font-mono text-xs font-semibold text-slate-900 tabular-nums focus:outline-none"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleUpdateBoxProblem(box.id, prob.id, {
+                                              quantity: prob.quantity + 1,
+                                            })
+                                          }
+                                          className="flex h-full w-7 items-center justify-center bg-slate-50 text-xs font-bold text-slate-700 hover:bg-slate-100"
+                                          aria-label="Aumentar quantidade"
+                                        >
+                                          +
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    <div className="col-span-7">
+                                      <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-slate-500">
+                                          DETALHE
+                                        </span>
+                                        <input
+                                          type="text"
+                                          value={prob.note ?? ''}
+                                          onChange={(e) =>
+                                            handleUpdateBoxProblem(box.id, prob.id, { note: e.target.value })
+                                          }
+                                          placeholder="Ex: instalado de forma incorreta"
+                                          className="h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none"
+                                        />
+                                      </label>
+                                    </div>
+                                  </div>
                                 </div>
-                              </div>
-                            );
-                          })}
-                        </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                ))}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
