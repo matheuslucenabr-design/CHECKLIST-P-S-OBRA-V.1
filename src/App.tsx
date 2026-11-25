@@ -181,7 +181,7 @@ export default function App() {
             onClick={() => setActiveTab('checklist')}
             className="flex items-baseline gap-2 font-display text-base font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0 sm:text-lg"
           >
-            <span className="font-mono text-[11px] font-medium lowercase text-slate-400">v.2</span>
+            <span className="font-mono text-[11px] font-medium lowercase text-slate-400">v.3.2</span>
             <span>Blindagem Audit</span>
           </button>
 

@@ -20,10 +20,8 @@ import {
 } from 'docx';
 import {
   AuditInspection,
-  PROBLEM_OPTIONS,
   formatPoleNumber,
   getCombinedPoleProblems,
-  normalizeProblemLabel,
 } from '../types/audit';
 import { computeAnalytics, formatMinutesDuration, parseTimeToMinutes } from './analytics';
 
@@ -468,27 +466,16 @@ export function exportAuditToPdf(audit: AuditInspection): void {
   const conformingBoxesCount = allBoxes.filter((b) => (b.problems ?? []).length === 0).length;
   const nonConformingBoxesCount = totalBoxesCount - conformingBoxesCount;
 
-  const perTypeQty = new Map<string, number>();
-  for (const opt of PROBLEM_OPTIONS) {
-    perTypeQty.set(opt, 0);
-  }
-
   let boxProblemsQty = 0;
   let poleProblemsQty = 0;
 
   for (const pole of audit.poles) {
     for (const pr of pole.problems ?? []) {
-      const q = safeQty(pr.quantity);
-      poleProblemsQty += q;
-      const key = normalizeProblemLabel(pr.problem);
-      perTypeQty.set(key, (perTypeQty.get(key) ?? 0) + q);
+      poleProblemsQty += safeQty(pr.quantity);
     }
     for (const box of pole.shieldingBoxes ?? []) {
       for (const pr of box.problems ?? []) {
-        const q = safeQty(pr.quantity);
-        boxProblemsQty += q;
-        const key = normalizeProblemLabel(pr.problem);
-        perTypeQty.set(key, (perTypeQty.get(key) ?? 0) + q);
+        boxProblemsQty += safeQty(pr.quantity);
       }
     }
   }
@@ -505,8 +492,6 @@ export function exportAuditToPdf(audit: AuditInspection): void {
     ['Quantidade de problemas totais', String(totalProblemsQty)],
     ['Quantidade de problemas em caixas de blindagem', String(boxProblemsQty)],
     ['Quantidade de problemas em poste', String(poleProblemsQty)],
-    ['Quantidade de problemas por tipo (1.1 a 2.9)', ''],
-    ...PROBLEM_OPTIONS.map((opt): [string, string] => [opt, String(perTypeQty.get(opt) ?? 0)]),
   ];
 
   autoTable(doc, {
@@ -522,16 +507,133 @@ export function exportAuditToPdf(audit: AuditInspection): void {
       valign: 'middle',
     },
     body: auditSummaryBody,
-    didParseCell: (data) => {
-      if (data.section === 'body' && data.row.index === 9) {
-        data.cell.styles.fillColor = [248, 250, 252];
-        data.cell.styles.fontStyle = 'bold';
-        data.cell.styles.textColor = [51, 65, 85];
-      }
-    },
     columnStyles: {
       0: { cellWidth: 'auto' },
       1: { cellWidth: 24, halign: 'right' },
+    },
+  });
+
+  // Table 2 inside RESUMO GERAL DA AUDITORIA: Checklist de Postes (identical columns to Excel)
+  let nextSummaryY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 4;
+  if (nextSummaryY > pageHeight - 36) {
+    doc.addPage();
+    nextSummaryY = 16;
+  }
+
+  const excelChecklistBody: Array<[string, string, string, string, string, string, string, string, string]> = [];
+  for (const pole of audit.poles) {
+    const combinedProblems = getCombinedPoleProblems(pole);
+    const poleStatus = combinedProblems.length > 0 ? 'Não Conforme' : 'Conforme';
+    const items =
+      combinedProblems.length === 0
+        ? [{ problem: 'Sem não conformidades registradas', quantity: 0, note: '—' }]
+        : combinedProblems.map((pr) => ({
+            problem: pr.source === 'caixa' ? `[${pr.sourceLabel}] ${pr.problem}` : pr.problem,
+            quantity: pr.quantity,
+            note: pr.note || '—',
+          }));
+
+    for (const item of items) {
+      excelChecklistBody.push([
+        `Poste ${formatPoleNumber(pole.number)}`,
+        pole.poleId || '—',
+        pole.type || '—',
+        poleStatus,
+        item.problem,
+        String(item.quantity),
+        item.note,
+        pole.observation || '—',
+        String(pole.photos.length),
+      ]);
+    }
+  }
+
+  autoTable(doc, {
+    startY: nextSummaryY,
+    margin: { left: margin, right: margin },
+    theme: 'grid',
+    styles: {
+      fontSize: 6.5,
+      cellPadding: 1.4,
+      textColor: [15, 23, 42],
+      lineColor: [226, 232, 240],
+      lineWidth: 0.15,
+      valign: 'middle',
+    },
+    headStyles: {
+      fillColor: [30, 64, 175],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 6.5,
+      halign: 'center',
+    },
+    head: [
+      [
+        'Poste Nº',
+        'ID do Poste',
+        'Tipo de Poste',
+        'Status do Poste',
+        'Problema Identificado',
+        'Quantidade',
+        'Observação do Item',
+        'Observação do Poste',
+        'Qtd. Fotos Anexadas',
+      ],
+    ],
+    body: excelChecklistBody,
+    columnStyles: {
+      0: { cellWidth: 14 },
+      1: { cellWidth: 16 },
+      2: { cellWidth: 15 },
+      3: { cellWidth: 18 },
+      4: { cellWidth: 'auto' },
+      5: { cellWidth: 13, halign: 'center' },
+      6: { cellWidth: 23 },
+      7: { cellWidth: 23 },
+      8: { cellWidth: 14, halign: 'center' },
+    },
+  });
+
+  // Table 3 inside RESUMO GERAL DA AUDITORIA: Indicadores por Problema (identical to Excel)
+  nextSummaryY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 4;
+  if (nextSummaryY > pageHeight - 36) {
+    doc.addPage();
+    nextSummaryY = 16;
+  }
+
+  const problemStatsBody: Array<[string, string, string, string]> = summary.problemStats.map((st) => [
+    st.problem,
+    String(st.occurrences),
+    String(st.totalQuantity),
+    String(st.polesAffected),
+  ]);
+
+  autoTable(doc, {
+    startY: nextSummaryY,
+    margin: { left: margin, right: margin },
+    theme: 'grid',
+    styles: {
+      fontSize: 7.2,
+      cellPadding: 1.4,
+      textColor: [15, 23, 42],
+      lineColor: [226, 232, 240],
+      lineWidth: 0.15,
+      valign: 'middle',
+    },
+    headStyles: {
+      fillColor: [15, 23, 42],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 7.2,
+      halign: 'center',
+    },
+    head: [['Problema Padrão', 'Ocorrências', 'Quantidade Total', 'Postes Afetados']],
+    body: problemStatsBody,
+    columnStyles: {
+      0: { cellWidth: 'auto' },
+      1: { cellWidth: 24, halign: 'center' },
+      2: { cellWidth: 28, halign: 'center' },
+      3: { cellWidth: 26, halign: 'center' },
     },
   });
 
