@@ -520,25 +520,70 @@ export function exportAuditToPdf(audit: AuditInspection): void {
     nextSummaryY = 16;
   }
 
-  const excelChecklistBody: Array<[string, string, string, string, string, string, string, string, string]> = [];
+  const excelChecklistBody: Array<
+    [string, string, string, string, string, string, string, string, string, string]
+  > = [];
+
   for (const pole of audit.poles) {
     const combinedProblems = getCombinedPoleProblems(pole);
     const poleStatus = combinedProblems.length > 0 ? 'Não Conforme' : 'Conforme';
-    const items =
-      combinedProblems.length === 0
-        ? [{ problem: 'Sem não conformidades registradas', quantity: 0, note: '—' }]
-        : combinedProblems.map((pr) => ({
-            problem: pr.source === 'caixa' ? `[${pr.sourceLabel}] ${pr.problem}` : pr.problem,
+    const poleProblems = pole.problems ?? [];
+    const boxes = pole.shieldingBoxes ?? [];
+
+    const rowsForPole: Array<{
+      boxLabel: string;
+      problem: string;
+      quantity: number;
+      note: string;
+    }> = [];
+
+    for (const pr of poleProblems) {
+      rowsForPole.push({
+        boxLabel: 'Poste',
+        problem: pr.problem,
+        quantity: pr.quantity,
+        note: pr.note || '—',
+      });
+    }
+
+    for (const box of boxes) {
+      const boxLabel = `Caixa ${formatPoleNumber(box.number)}`;
+      const boxProblems = box.problems ?? [];
+      if (boxProblems.length === 0) {
+        rowsForPole.push({
+          boxLabel,
+          problem: 'Caixa de Blindagem Conforme',
+          quantity: 0,
+          note: '—',
+        });
+      } else {
+        for (const pr of boxProblems) {
+          rowsForPole.push({
+            boxLabel,
+            problem: pr.problem,
             quantity: pr.quantity,
             note: pr.note || '—',
-          }));
+          });
+        }
+      }
+    }
 
-    for (const item of items) {
+    if (rowsForPole.length === 0) {
+      rowsForPole.push({
+        boxLabel: '—',
+        problem: 'Sem não conformidades registradas',
+        quantity: 0,
+        note: '—',
+      });
+    }
+
+    for (const item of rowsForPole) {
       excelChecklistBody.push([
         `Poste ${formatPoleNumber(pole.number)}`,
         pole.poleId || '—',
         pole.type || '—',
         poleStatus,
+        item.boxLabel,
         item.problem,
         String(item.quantity),
         item.note,
@@ -553,8 +598,8 @@ export function exportAuditToPdf(audit: AuditInspection): void {
     margin: { left: margin, right: margin },
     theme: 'grid',
     styles: {
-      fontSize: 6.5,
-      cellPadding: 1.4,
+      fontSize: 6.2,
+      cellPadding: 1.2,
       textColor: [15, 23, 42],
       lineColor: [226, 232, 240],
       lineWidth: 0.15,
@@ -564,7 +609,7 @@ export function exportAuditToPdf(audit: AuditInspection): void {
       fillColor: [30, 64, 175],
       textColor: [255, 255, 255],
       fontStyle: 'bold',
-      fontSize: 6.5,
+      fontSize: 6.2,
       halign: 'center',
     },
     head: [
@@ -573,6 +618,7 @@ export function exportAuditToPdf(audit: AuditInspection): void {
         'ID do Poste',
         'Tipo de Poste',
         'Status do Poste',
+        'Caixa de Blindagem',
         'Problema Identificado',
         'Quantidade',
         'Observação do Item',
@@ -582,15 +628,16 @@ export function exportAuditToPdf(audit: AuditInspection): void {
     ],
     body: excelChecklistBody,
     columnStyles: {
-      0: { cellWidth: 14 },
-      1: { cellWidth: 16 },
-      2: { cellWidth: 15 },
-      3: { cellWidth: 18 },
-      4: { cellWidth: 'auto' },
-      5: { cellWidth: 13, halign: 'center' },
-      6: { cellWidth: 23 },
-      7: { cellWidth: 23 },
-      8: { cellWidth: 14, halign: 'center' },
+      0: { cellWidth: 13 },
+      1: { cellWidth: 14 },
+      2: { cellWidth: 13 },
+      3: { cellWidth: 16 },
+      4: { cellWidth: 15 },
+      5: { cellWidth: 'auto' },
+      6: { cellWidth: 12, halign: 'center' },
+      7: { cellWidth: 21 },
+      8: { cellWidth: 21 },
+      9: { cellWidth: 13, halign: 'center' },
     },
   });
 
